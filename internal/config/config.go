@@ -12,14 +12,22 @@ type Config struct {
 	PAT      string
 	QueryID  string
 	Assignee string
+	envPath  string
+}
+
+// EnvPath returns the .env file path used by this config.
+func (c *Config) EnvPath() string {
+	return c.envPath
 }
 
 func Load() (*Config, error) {
 	// ADO_ENV overrides the default .env location (useful for aliases)
-	if envFile := os.Getenv("ADO_ENV"); envFile != "" {
-		_ = godotenv.Load(envFile)
+	envPath := os.Getenv("ADO_ENV")
+	if envPath != "" {
+		_ = godotenv.Load(envPath)
 	} else {
-		_ = godotenv.Load() // fallback: cwd/.env
+		envPath = ".env"
+		_ = godotenv.Load()
 	}
 
 	cfg := &Config{
@@ -28,6 +36,7 @@ func Load() (*Config, error) {
 		PAT:      os.Getenv("ADO_PAT"),
 		QueryID:  os.Getenv("ADO_QUERY_ID"),
 		Assignee: os.Getenv("ADO_ASSIGNEE"),
+		envPath:  envPath,
 	}
 
 	if cfg.Org == "" || cfg.PAT == "" {
