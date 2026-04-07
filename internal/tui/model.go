@@ -27,6 +27,7 @@ const (
 	screenMenu screen = iota
 	screenQuery
 	screenSettings
+	screenCreate
 )
 
 type Model struct {
@@ -38,6 +39,7 @@ type Model struct {
 	items       []menuItem
 	queryMdl    queryModel
 	settingsMdl settingsModel
+	createMdl   createModel
 }
 
 func NewModel(client *api.Client, queryID string) Model {
@@ -47,6 +49,7 @@ func NewModel(client *api.Client, queryID string) Model {
 		screen:  screenMenu,
 		items: []menuItem{
 			{label: "Query", desc: "Run a saved query and browse work items"},
+			{label: "New", desc: "Create a new work item"},
 			{label: "Settings", desc: "View current configuration"},
 		},
 	}
@@ -62,6 +65,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateQuery(msg)
 	case screenSettings:
 		return m.updateSettings(msg)
+	case screenCreate:
+		return m.updateCreate(msg)
 	default:
 		return m.updateMenu(msg)
 	}
@@ -87,7 +92,11 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queryMdl = newQueryModel(m.client, m.queryID)
 				m.screen = screenQuery
 				return m, m.queryMdl.init()
-			case 1: // Settings
+			case 1: // New
+				m.createMdl = newCreateModel(m.client)
+				m.screen = screenCreate
+				return m, nil
+			case 2: // Settings
 				m.settingsMdl = newSettingsModel(m.client.Config())
 				m.screen = screenSettings
 				return m, nil
@@ -103,8 +112,31 @@ func (m Model) updateQuery(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenMenu
 		return m, nil
 	}
+	// Handle create request from query screen
+	if _, ok := msg.(openCreateMsg); ok {
+		m.createMdl = newCreateModel(m.client)
+		m.screen = screenCreate
+		return m, nil
+	}
 	var cmd tea.Cmd
 	m.queryMdl, cmd = m.queryMdl.update(msg)
+	return m, cmd
+}
+
+func (m Model) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			if m.createMdl.step == stepType || m.createMdl.step == stepDone {
+				m.screen = screenMenu
+				return m, nil
+			}
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	var cmd tea.Cmd
+	m.createMdl, cmd = m.createMdl.update(msg)
 	return m, cmd
 }
 
@@ -130,6 +162,8 @@ func (m Model) View() string {
 		return m.queryMdl.view()
 	case screenSettings:
 		return m.settingsMdl.view()
+	case screenCreate:
+		return m.createMdl.view()
 	default:
 		return m.viewMenu()
 	}

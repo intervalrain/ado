@@ -37,6 +37,7 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		{"PAT", "ADO_PAT", cfg.PAT},
 		{"Query ID", "ADO_QUERY_ID", cfg.QueryID},
 		{"Assignee", "ADO_ASSIGNEE", cfg.Assignee},
+		{"Team", "ADO_TEAM", cfg.Team},
 	}
 
 	fields := make([]settingsField, len(keys))

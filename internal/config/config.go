@@ -12,6 +12,7 @@ type Config struct {
 	PAT      string
 	QueryID  string
 	Assignee string
+	Team     string
 	envPath  string
 }
 
@@ -36,6 +37,7 @@ func Load() (*Config, error) {
 		PAT:      os.Getenv("ADO_PAT"),
 		QueryID:  os.Getenv("ADO_QUERY_ID"),
 		Assignee: os.Getenv("ADO_ASSIGNEE"),
+		Team:     os.Getenv("ADO_TEAM"),
 		envPath:  envPath,
 	}
 

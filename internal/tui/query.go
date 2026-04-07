@@ -16,6 +16,7 @@ var tableStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
 
+type openCreateMsg struct{}
 type errMsg struct{ err error }
 type queryResultMsg struct{ refs []api.WorkItemRef }
 type workItemMsg struct{ item *api.WorkItem }
@@ -197,12 +198,25 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 
 func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.String() == "enter" && len(m.rows) > 0 {
-			m.mode = modeSelect
-			m.selCol = 0
-			m.msg = ""
-			m.table.SetStyles(m.unfocusedStyles())
-			return m, nil
+		switch keyMsg.String() {
+		case "enter":
+			if len(m.rows) > 0 {
+				m.mode = modeSelect
+				m.selCol = 0
+				m.msg = ""
+				m.table.SetStyles(m.unfocusedStyles())
+				return m, nil
+			}
+		case "n":
+			return m, func() tea.Msg { return openCreateMsg{} }
+		case "r":
+			m.rows = nil
+			m.table.SetRows(nil)
+			m.loaded = false
+			m.pending = 0
+			m.err = nil
+			m.msg = "Refreshing..."
+			return m, m.fetchQuery
 		}
 	}
 	var cmd tea.Cmd
@@ -440,7 +454,7 @@ func (m queryModel) view() string {
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  n: new  r: refresh  q: quit\n")
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:
