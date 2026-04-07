@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,11 +19,7 @@ func NewClient(cfg *config.Config) *Client {
 	return &Client{cfg: cfg, http: &http.Client{}}
 }
 
-func (c *Client) get(url string, result any) error {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
-	}
+func (c *Client) do(req *http.Request, result any) error {
 	req.SetBasicAuth("", c.cfg.PAT)
 
 	resp, err := c.http.Do(req)
@@ -31,12 +28,36 @@ func (c *Client) get(url string, result any) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API %d: %s", resp.StatusCode, string(body))
 	}
 
-	return json.NewDecoder(resp.Body).Decode(result)
+	if result != nil {
+		return json.NewDecoder(resp.Body).Decode(result)
+	}
+	return nil
+}
+
+func (c *Client) get(url string, result any) error {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(req, result)
+}
+
+func (c *Client) patch(url string, body any, result any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json-patch+json")
+	return c.do(req, result)
 }
 
 func (c *Client) BaseURL() string {

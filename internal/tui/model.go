@@ -98,12 +98,10 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateQuery(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if msg.String() == "esc" {
-			m.screen = screenMenu
-			return m, nil
-		}
+	// Only return to menu on esc when in browse mode (not selecting/editing)
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" && m.queryMdl.mode == modeBrowse {
+		m.screen = screenMenu
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.queryMdl, cmd = m.queryMdl.update(msg)

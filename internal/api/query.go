@@ -41,6 +41,21 @@ func (c *Client) RunQuery(queryID string) (*QueryResult, error) {
 	return &result, nil
 }
 
+type patchOp struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
+func (c *Client) UpdateWorkItemField(id int, fieldPath string, value any) error {
+	url := fmt.Sprintf(
+		"%s/%s/_apis/wit/workitems/%d?api-version=7.1",
+		c.BaseURL(), c.Project(), id,
+	)
+	ops := []patchOp{{Op: "replace", Path: "/fields/" + fieldPath, Value: value}}
+	return c.patch(url, ops, nil)
+}
+
 func (c *Client) GetWorkItem(id int) (*WorkItem, error) {
 	url := fmt.Sprintf(
 		"%s/%s/_apis/wit/workitems/%d?$expand=all&api-version=7.1",
