@@ -19,10 +19,13 @@ type WorkItem struct {
 }
 
 type WorkItemFields struct {
-	Title       string `json:"System.Title"`
-	State       string `json:"System.State"`
-	AssignedTo  Identity `json:"System.AssignedTo"`
-	WorkItemType string `json:"System.WorkItemType"`
+	Title            string   `json:"System.Title"`
+	State            string   `json:"System.State"`
+	AssignedTo       Identity `json:"System.AssignedTo"`
+	WorkItemType     string   `json:"System.WorkItemType"`
+	Tags             string   `json:"System.Tags"`
+	OriginalEstimate float64  `json:"Microsoft.VSTS.Scheduling.OriginalEstimate"`
+	RemainingWork    float64  `json:"Microsoft.VSTS.Scheduling.RemainingWork"`
 }
 
 type Identity struct {
