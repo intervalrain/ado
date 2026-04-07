@@ -1,0 +1,51 @@
+package api
+
+import (
+	"fmt"
+)
+
+type QueryResult struct {
+	WorkItems []WorkItemRef `json:"workItems"`
+}
+
+type WorkItemRef struct {
+	ID  int    `json:"id"`
+	URL string `json:"url"`
+}
+
+type WorkItem struct {
+	ID     int            `json:"id"`
+	Fields WorkItemFields `json:"fields"`
+}
+
+type WorkItemFields struct {
+	Title       string `json:"System.Title"`
+	State       string `json:"System.State"`
+	AssignedTo  Identity `json:"System.AssignedTo"`
+	WorkItemType string `json:"System.WorkItemType"`
+}
+
+type Identity struct {
+	DisplayName string `json:"displayName"`
+}
+
+func (c *Client) RunQuery(queryID string) (*QueryResult, error) {
+	url := fmt.Sprintf("%s/%s/_apis/wit/wiql/%s?api-version=7.1", c.BaseURL(), c.Project(), queryID)
+	var result QueryResult
+	if err := c.get(url, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) GetWorkItem(id int) (*WorkItem, error) {
+	url := fmt.Sprintf(
+		"%s/%s/_apis/wit/workitems/%d?$expand=all&api-version=7.1",
+		c.BaseURL(), c.Project(), id,
+	)
+	var wi WorkItem
+	if err := c.get(url, &wi); err != nil {
+		return nil, err
+	}
+	return &wi, nil
+}
