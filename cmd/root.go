@@ -6,6 +6,7 @@ import (
 	"github.com/rainhu/ado/internal/config"
 	"github.com/rainhu/ado/internal/cqrs"
 	"github.com/rainhu/ado/internal/features/create"
+	"github.com/rainhu/ado/internal/features/pr"
 	"github.com/rainhu/ado/internal/features/query"
 	"github.com/spf13/cobra"
 )
@@ -34,6 +35,8 @@ var rootCmd = &cobra.Command{
 		// Register handlers
 		mediator.Register(query.RequestName, query.NewGetQueryHandler(client))
 		mediator.Register(create.RequestName, create.NewCreateWorkItemHandler(client))
+		mediator.Register(pr.ListRequestName, pr.NewListMyPRsHandler(client))
+		mediator.Register(pr.CreateRequestName, pr.NewCreatePRHandler(client))
 
 		return nil
 	},

@@ -28,6 +28,7 @@ const (
 	screenQuery
 	screenSettings
 	screenCreate
+	screenPR
 )
 
 type Model struct {
@@ -40,6 +41,7 @@ type Model struct {
 	queryMdl    queryModel
 	settingsMdl settingsModel
 	createMdl   createModel
+	prMdl       prModel
 }
 
 func NewModel(client *api.Client, queryID string) Model {
@@ -50,6 +52,7 @@ func NewModel(client *api.Client, queryID string) Model {
 		items: []menuItem{
 			{label: "Query", desc: "Run a saved query and browse work items"},
 			{label: "New", desc: "Create a new work item"},
+			{label: "Pull Requests", desc: "Browse pull requests by repository"},
 			{label: "Settings", desc: "View current configuration"},
 		},
 	}
@@ -67,6 +70,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateSettings(msg)
 	case screenCreate:
 		return m.updateCreate(msg)
+	case screenPR:
+		return m.updatePR(msg)
 	default:
 		return m.updateMenu(msg)
 	}
@@ -96,7 +101,11 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.createMdl = newCreateModel(m.client)
 				m.screen = screenCreate
 				return m, nil
-			case 2: // Settings
+			case 2: // Pull Requests
+				m.prMdl = newPRModel(m.client)
+				m.screen = screenPR
+				return m, m.prMdl.init()
+			case 3: // Settings
 				m.settingsMdl = newSettingsModel(m.client.Config())
 				m.screen = screenSettings
 				return m, nil
@@ -140,6 +149,23 @@ func (m Model) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updatePR(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			if m.prMdl.view == prViewRepos {
+				m.screen = screenMenu
+				return m, nil
+			}
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	var cmd tea.Cmd
+	m.prMdl, cmd = m.prMdl.update(msg)
+	return m, cmd
+}
+
 func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Only allow esc to go back when not editing a field
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && !m.settingsMdl.editing {
@@ -164,6 +190,8 @@ func (m Model) View() string {
 		return m.settingsMdl.view()
 	case screenCreate:
 		return m.createMdl.view()
+	case screenPR:
+		return m.prMdl.viewStr()
 	default:
 		return m.viewMenu()
 	}

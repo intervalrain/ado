@@ -60,6 +60,45 @@ func (c *Client) patch(url string, body any, result any) error {
 	return c.do(req, result)
 }
 
+func (c *Client) post(url string, body any, result any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.do(req, result)
+}
+
+func (c *Client) put(url string, body any, result any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.do(req, result)
+}
+
+func (c *Client) patchJSON(url string, body any, result any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.do(req, result)
+}
+
 func (c *Client) BaseURL() string {
 	return c.cfg.Org
 }

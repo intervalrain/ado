@@ -8,9 +8,15 @@ import (
 
 const cacheFile = ".ado_cache.json"
 
+type FavRepo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Cache struct {
-	Tags []string `json:"tags"`
-	path string
+	Tags     []string  `json:"tags"`
+	FavRepos []FavRepo `json:"fav_repos"`
+	path     string
 }
 
 func Load() *Cache {
@@ -43,6 +49,36 @@ func (c *Cache) AddTags(tags []string) {
 			existing[t] = true
 		}
 	}
+}
+
+// AddFavRepo adds a repo to favorites (deduplicates by ID).
+func (c *Cache) AddFavRepo(id, name string) {
+	for _, r := range c.FavRepos {
+		if r.ID == id {
+			return
+		}
+	}
+	c.FavRepos = append(c.FavRepos, FavRepo{ID: id, Name: name})
+}
+
+// RemoveFavRepo removes a repo from favorites by ID.
+func (c *Cache) RemoveFavRepo(id string) {
+	for i, r := range c.FavRepos {
+		if r.ID == id {
+			c.FavRepos = append(c.FavRepos[:i], c.FavRepos[i+1:]...)
+			return
+		}
+	}
+}
+
+// IsFavRepo checks if a repo is in favorites.
+func (c *Cache) IsFavRepo(id string) bool {
+	for _, r := range c.FavRepos {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func cachePath() string {

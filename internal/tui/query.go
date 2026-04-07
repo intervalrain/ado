@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rainhu/ado/internal/api"
+	"github.com/rainhu/ado/internal/util"
 )
 
 var tableStyle = lipgloss.NewStyle().
@@ -393,12 +394,13 @@ func (m *queryModel) resizeColumns() {
 	headers := []string{"Tags", "ID", "Type", "State", "Title", "Assigned To", "Estimate", "Remaining"}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = util.DisplayWidth(h)
 	}
 	for _, row := range m.rows {
 		for i, cell := range row {
-			if len(cell) > widths[i] {
-				widths[i] = len(cell)
+			dw := util.DisplayWidth(cell)
+			if dw > widths[i] {
+				widths[i] = dw
 			}
 		}
 	}
@@ -482,7 +484,7 @@ func (m queryModel) renderWithHighlight() string {
 
 	// Header
 	for i, col := range cols {
-		cell := fmt.Sprintf("%-*s", col.Width, col.Title)
+		cell := util.PadRight(col.Title, col.Width)
 		if i == m.selCol {
 			b.WriteString(cellHighlight.Render(cell))
 		} else {
@@ -510,7 +512,7 @@ func (m queryModel) renderWithHighlight() string {
 			if ci < len(row) {
 				val = row[ci]
 			}
-			cell := fmt.Sprintf("%-*s", col.Width, val)
+			cell := util.PadRight(val, col.Width)
 			if ri == cursorRow && ci == m.selCol {
 				b.WriteString(cellHighlight.Render(cell))
 			} else if ri == cursorRow {
