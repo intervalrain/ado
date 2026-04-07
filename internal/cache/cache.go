@@ -14,9 +14,11 @@ type FavRepo struct {
 }
 
 type Cache struct {
-	Tags     []string  `json:"tags"`
-	FavRepos []FavRepo `json:"fav_repos"`
-	path     string
+	Tags        []string  `json:"tags"`
+	FavRepos    []FavRepo `json:"fav_repos"`
+	Reviewer    string    `json:"reviewer,omitempty"`
+	OptReviewer string    `json:"opt_reviewer,omitempty"`
+	path        string
 }
 
 func Load() *Cache {

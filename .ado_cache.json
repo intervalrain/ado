@@ -24,5 +24,7 @@
       "id": "bd4e2a63-3bdd-4eb2-b830-e64c2878c901",
       "name": "digitaltwin_transceiver"
     }
-  ]
+  ],
+  "reviewer": "Kevin.Chien",
+  "opt_reviewer": "Tony.Hsieh"
 }

@@ -153,7 +153,7 @@ func (m Model) updatePR(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "esc":
-			if m.prMdl.view == prViewRepos {
+			if m.prMdl.view == prViewMenu {
 				m.screen = screenMenu
 				return m, nil
 			}

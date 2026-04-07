@@ -94,10 +94,50 @@ func (c *Client) PRWebURL(repoName string, prID int) string {
 		c.BaseURL(), c.Project(), repoName, prID)
 }
 
+// ResolveMyIdentity resolves the current user's identity and caches it.
+func (c *Client) ResolveMyIdentity() (*IdentitySearchResult, error) {
+	return c.SearchIdentity(c.cfg.Assignee)
+}
+
+// ListMyCreatedPullRequests returns active PRs created by the current user.
+func (c *Client) ListMyCreatedPullRequests() ([]PullRequest, error) {
+	me, err := c.ResolveMyIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("resolve own identity: %w", err)
+	}
+
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/pullrequests?searchCriteria.status=active&searchCriteria.creatorId=%s&api-version=7.1",
+		c.BaseURL(), c.Project(), me.ID,
+	)
+	var result pullRequestsResult
+	if err := c.get(u, &result); err != nil {
+		return nil, err
+	}
+	return result.Value, nil
+}
+
+// ListMyReviewPullRequests returns active PRs where the current user is a reviewer.
+func (c *Client) ListMyReviewPullRequests() ([]PullRequest, error) {
+	me, err := c.ResolveMyIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("resolve own identity: %w", err)
+	}
+
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/pullrequests?searchCriteria.status=active&searchCriteria.reviewerId=%s&api-version=7.1",
+		c.BaseURL(), c.Project(), me.ID,
+	)
+	var result pullRequestsResult
+	if err := c.get(u, &result); err != nil {
+		return nil, err
+	}
+	return result.Value, nil
+}
+
 // ListMyPullRequests returns active PRs where the current user is a required reviewer.
 func (c *Client) ListMyPullRequests() ([]PullRequest, error) {
-	// Resolve own identity to get GUID
-	me, err := c.SearchIdentity(c.cfg.Assignee)
+	me, err := c.ResolveMyIdentity()
 	if err != nil {
 		return nil, fmt.Errorf("resolve own identity: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rainhu/ado/internal/api"
+	"github.com/rainhu/ado/internal/cache"
 	"github.com/rainhu/ado/internal/git"
 )
 
@@ -31,6 +32,7 @@ type prCreatedMsg struct {
 
 type prCreateModel struct {
 	client *api.Client
+	cache  *cache.Cache
 	repoID string
 	repoName string
 	step   prCreateStep
@@ -48,7 +50,7 @@ type prCreateModel struct {
 	err       error
 }
 
-func newPRCreateModel(client *api.Client, repoID, repoName string) prCreateModel {
+func newPRCreateModel(client *api.Client, c *cache.Cache, repoID, repoName string) prCreateModel {
 	srcBranch, _ := git.CurrentBranch()
 	defaultTarget := git.DefaultBranch()
 
@@ -71,14 +73,23 @@ func newPRCreateModel(client *api.Client, repoID, repoName string) prCreateModel
 	ri.Placeholder = "Required reviewer name (Enter to skip)..."
 	ri.CharLimit = 100
 	ri.Width = 40
+	if c.Reviewer != "" {
+		ri.SetValue(c.Reviewer)
+		ri.Placeholder = ""
+	}
 
 	oi := textinput.New()
 	oi.Placeholder = "Optional reviewer name (Enter to skip)..."
 	oi.CharLimit = 100
 	oi.Width = 40
+	if c.OptReviewer != "" {
+		oi.SetValue(c.OptReviewer)
+		oi.Placeholder = ""
+	}
 
 	m := prCreateModel{
 		client:        client,
+		cache:         c,
 		repoID:        repoID,
 		repoName:      repoName,
 		step:          prStepTitle,
@@ -107,27 +118,15 @@ func (m prCreateModel) update(msg tea.Msg) (prCreateModel, tea.Cmd) {
 
 	switch m.step {
 	case prStepTitle:
-		return m.updateTextStep(msg, &m.titleInput, prStepDesc, func() tea.Cmd {
-			m.descInput.Focus()
-			return m.descInput.Cursor.BlinkCmd()
-		})
+		return m.updateTextStep(msg, prStepDesc)
 	case prStepDesc:
-		return m.updateTextStep(msg, &m.descInput, prStepTarget, func() tea.Cmd {
-			m.targetInput.Focus()
-			return m.targetInput.Cursor.BlinkCmd()
-		})
+		return m.updateTextStep(msg, prStepTarget)
 	case prStepTarget:
-		return m.updateTextStep(msg, &m.targetInput, prStepReviewer, func() tea.Cmd {
-			m.reviewerInput.Focus()
-			return m.reviewerInput.Cursor.BlinkCmd()
-		})
+		return m.updateTextStep(msg, prStepReviewer)
 	case prStepReviewer:
-		return m.updateTextStep(msg, &m.reviewerInput, prStepOptReviewer, func() tea.Cmd {
-			m.optRevInput.Focus()
-			return m.optRevInput.Cursor.BlinkCmd()
-		})
+		return m.updateTextStep(msg, prStepOptReviewer)
 	case prStepOptReviewer:
-		return m.updateTextStep(msg, &m.optRevInput, prStepAutoComplete, nil)
+		return m.updateTextStep(msg, prStepAutoComplete)
 	case prStepAutoComplete:
 		return m.updateAutoComplete(msg)
 	case prStepConfirm:
@@ -136,7 +135,28 @@ func (m prCreateModel) update(msg tea.Msg) (prCreateModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m prCreateModel) updateTextStep(msg tea.Msg, input *textinput.Model, nextStep prCreateStep, onNext func() tea.Cmd) (prCreateModel, tea.Cmd) {
+// currentInput returns a pointer to the active text input for the current step.
+// Must be called on an addressable receiver (pointer or local variable).
+func (m *prCreateModel) currentInput() *textinput.Model {
+	switch m.step {
+	case prStepTitle:
+		return &m.titleInput
+	case prStepDesc:
+		return &m.descInput
+	case prStepTarget:
+		return &m.targetInput
+	case prStepReviewer:
+		return &m.reviewerInput
+	case prStepOptReviewer:
+		return &m.optRevInput
+	default:
+		return nil
+	}
+}
+
+func (m prCreateModel) updateTextStep(msg tea.Msg, nextStep prCreateStep) (prCreateModel, tea.Cmd) {
+	input := m.currentInput() // pointer into receiver's own field
+
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "enter":
@@ -150,10 +170,7 @@ func (m prCreateModel) updateTextStep(msg tea.Msg, input *textinput.Model, nextS
 			}
 			input.Blur()
 			m.step = nextStep
-			if onNext != nil {
-				return m, onNext()
-			}
-			return m, nil
+			return m, m.focusCurrentStep()
 		case "esc":
 			input.Blur()
 			if m.step == prStepTitle {
@@ -182,8 +199,7 @@ func (m prCreateModel) updateAutoComplete(msg tea.Msg) (prCreateModel, tea.Cmd) 
 			m.step = prStepConfirm
 		case "esc":
 			m.step = prStepOptReviewer
-			m.optRevInput.Focus()
-			return m, m.optRevInput.Cursor.BlinkCmd()
+			return m, m.focusCurrentStep()
 		}
 	}
 	return m, nil
@@ -196,36 +212,23 @@ func (m prCreateModel) updateConfirm(msg tea.Msg) (prCreateModel, tea.Cmd) {
 			return m, m.submit()
 		case "n", "N", "esc":
 			m.step = prStepTitle
-			m.titleInput.Focus()
-			return m, m.titleInput.Cursor.BlinkCmd()
+			return m, m.focusCurrentStep()
 		}
 	}
 	return m, nil
 }
 
-func (m prCreateModel) focusCurrentStep() tea.Cmd {
-	switch m.step {
-	case prStepTitle:
-		m.titleInput.Focus()
-		return m.titleInput.Cursor.BlinkCmd()
-	case prStepDesc:
-		m.descInput.Focus()
-		return m.descInput.Cursor.BlinkCmd()
-	case prStepTarget:
-		m.targetInput.Focus()
-		return m.targetInput.Cursor.BlinkCmd()
-	case prStepReviewer:
-		m.reviewerInput.Focus()
-		return m.reviewerInput.Cursor.BlinkCmd()
-	case prStepOptReviewer:
-		m.optRevInput.Focus()
-		return m.optRevInput.Cursor.BlinkCmd()
+func (m *prCreateModel) focusCurrentStep() tea.Cmd {
+	input := m.currentInput()
+	if input != nil {
+		return input.Focus()
 	}
 	return nil
 }
 
 func (m prCreateModel) submit() tea.Cmd {
 	client := m.client
+	c := m.cache
 	repoID := m.repoID
 	repoName := m.repoName
 	title := m.titleInput.Value()
@@ -236,6 +239,11 @@ func (m prCreateModel) submit() tea.Cmd {
 	optReviewer := strings.TrimSpace(m.optRevInput.Value())
 	autoComplete := m.autoComplete
 	assignee := client.Config().Assignee
+
+	// Cache reviewer names for next time
+	c.Reviewer = reviewer
+	c.OptReviewer = optReviewer
+	_ = c.Save()
 
 	return func() tea.Msg {
 		pr, err := client.CreatePullRequest(api.CreatePullRequestInput{
