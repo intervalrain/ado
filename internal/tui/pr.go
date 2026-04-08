@@ -11,6 +11,7 @@ import (
 	"github.com/rainhu/ado/internal/api"
 	"github.com/rainhu/ado/internal/cache"
 	"github.com/rainhu/ado/internal/git"
+	"github.com/rainhu/ado/internal/util"
 )
 
 type prView int
@@ -60,6 +61,7 @@ type prModel struct {
 	view   prView
 
 	// Terminal size for scrolling
+	termWidth  int
 	termHeight int
 
 	// Category menu
@@ -90,7 +92,8 @@ func newPRModel(client *api.Client) prModel {
 		client:     client,
 		cache:      cache.Load(),
 		view:       prViewMenu,
-		termHeight: 24, // sensible default
+		termWidth:  120,
+		termHeight: 24,
 	}
 }
 
@@ -209,6 +212,7 @@ func visibleRange(total, cursor, availableLines int) (start, end int) {
 func (m prModel) update(msg tea.Msg) (prModel, tea.Cmd) {
 	// Handle terminal resize
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.termWidth = sizeMsg.Width
 		m.termHeight = sizeMsg.Height
 		return m, nil
 	}
@@ -599,10 +603,7 @@ func (m prModel) viewPRList() string {
 		b.WriteString("\n")
 	} else {
 		// Reserve lines for title, help, detail view, etc.
-		availLines := m.termHeight - 14
-		if availLines < 5 {
-			availLines = 5
-		}
+		availLines := max(m.termHeight-14, 5)
 		start, end := visibleRange(len(m.prs), m.prCur, availLines)
 
 		if start > 0 {
@@ -612,34 +613,103 @@ func (m prModel) viewPRList() string {
 		}
 
 		showRepo := m.selectedCategory != prCatBrowseRepos
+
+		// Build columns and compute auto-widths
+		type prRow struct {
+			repo, title, source, target, author, required, optional string
+		}
+		rows := make([]prRow, end-start)
 		for i := start; i < end; i++ {
 			pr := m.prs[i]
-			src := trimRef(pr.SourceRefName)
-			tgt := trimRef(pr.TargetRefName)
-			reviewSummary := buildReviewSummary(pr.Reviewers)
-
-			var line string
-			if showRepo {
-				line = fmt.Sprintf("[%s] %-40s  %s → %s  @%s  %s",
-					pr.Repository.Name,
-					truncate(pr.Title, 40),
-					src, tgt,
-					pr.CreatedBy.DisplayName,
-					reviewSummary,
-				)
-			} else {
-				line = fmt.Sprintf("%-50s  %s → %s  @%s  %s",
-					truncate(pr.Title, 50),
-					src, tgt,
-					pr.CreatedBy.DisplayName,
-					reviewSummary,
-				)
+			req, opt := buildReviewColumns(pr.Reviewers)
+			r := prRow{
+				title:    pr.Title,
+				source:   trimRef(pr.SourceRefName),
+				target:   trimRef(pr.TargetRefName),
+				author:   pr.CreatedBy.DisplayName,
+				required: req,
+				optional: opt,
 			}
+			if showRepo {
+				r.repo = pr.Repository.Name
+			}
+			rows[i-start] = r
+		}
+
+		// Compute column widths from content, including headers
+		var wRepo, wTitle, wSrc, wTgt, wAuthor, wReq, wOpt int
+		if showRepo {
+			wRepo = util.DisplayWidth("Repo")
+		}
+		wTitle = util.DisplayWidth("Title")
+		wSrc = util.DisplayWidth("Source")
+		wTgt = util.DisplayWidth("Target")
+		wAuthor = util.DisplayWidth("Author")
+		wReq = util.DisplayWidth("Required")
+		wOpt = util.DisplayWidth("Optional")
+		for _, r := range rows {
+			wRepo = max(wRepo, util.DisplayWidth(r.repo))
+			wTitle = max(wTitle, util.DisplayWidth(r.title))
+			wSrc = max(wSrc, util.DisplayWidth(r.source))
+			wTgt = max(wTgt, util.DisplayWidth(r.target))
+			wAuthor = max(wAuthor, util.DisplayWidth(r.author))
+			wReq = max(wReq, util.DisplayWidth(r.required))
+			wOpt = max(wOpt, util.DisplayWidth(r.optional))
+		}
+
+		// Render header
+		headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("240"))
+		{
+			var hdr strings.Builder
+			if showRepo {
+				hdr.WriteString(util.PadRight("Repo", wRepo))
+				hdr.WriteString("  ")
+			}
+			hdr.WriteString(util.PadRight("Title", wTitle))
+			hdr.WriteString("  ")
+			hdr.WriteString(util.PadRight("Source", wSrc))
+			hdr.WriteString("  ")
+			hdr.WriteString(util.PadRight("Target", wTgt))
+			hdr.WriteString("  ")
+			hdr.WriteString(util.PadRight("Author", wAuthor))
+			hdr.WriteString("  ")
+			hdr.WriteString(util.PadRight("Required", wReq))
+			hdr.WriteString("  ")
+			hdr.WriteString("Optional")
+			b.WriteString(itemStyle.Render(headerStyle.Render(hdr.String())))
+			b.WriteString("\n")
+			// Separator
+			sepWidth := wTitle + wSrc + wTgt + wAuthor + wReq + wOpt + 10
+			if showRepo {
+				sepWidth += wRepo + 2
+			}
+			b.WriteString(itemStyle.Render(headerStyle.Render(strings.Repeat("─", sepWidth))))
+			b.WriteString("\n")
+		}
+
+		for idx, r := range rows {
+			i := start + idx
+			var line strings.Builder
+			if showRepo {
+				line.WriteString(util.PadRight(r.repo, wRepo))
+				line.WriteString("  ")
+			}
+			line.WriteString(util.PadRight(r.title, wTitle))
+			line.WriteString("  ")
+			line.WriteString(util.PadRight(r.source, wSrc))
+			line.WriteString("  ")
+			line.WriteString(util.PadRight(r.target, wTgt))
+			line.WriteString("  ")
+			line.WriteString(util.PadRight(r.author, wAuthor))
+			line.WriteString("  ")
+			line.WriteString(util.PadRight(r.required, wReq))
+			line.WriteString("  ")
+			line.WriteString(r.optional)
 
 			if i == m.prCur {
-				b.WriteString(selectedStyle.Render("> " + line))
+				b.WriteString(selectedStyle.Render("> " + line.String()))
 			} else {
-				b.WriteString(itemStyle.Render("  " + line))
+				b.WriteString(itemStyle.Render("  " + line.String()))
 			}
 			b.WriteString("\n")
 		}
@@ -687,47 +757,31 @@ func trimRef(ref string) string {
 	return strings.TrimPrefix(ref, "refs/heads/")
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
 
-func buildReviewSummary(reviewers []api.PRReviewer) string {
-	if len(reviewers) == 0 {
-		return "no reviewers"
-	}
-	approved := 0
-	waiting := 0
-	rejected := 0
-	noVote := 0
+func buildReviewColumns(reviewers []api.PRReviewer) (required, optional string) {
+	var req, opt []string
 	for _, r := range reviewers {
-		switch {
-		case r.Vote >= 5:
-			approved++
-		case r.Vote == -5:
-			waiting++
-		case r.Vote == -10:
-			rejected++
-		default:
-			noVote++
+		label := fmt.Sprintf("%s:%s", r.DisplayName, shortVoteLabel(r.Vote))
+		if r.IsRequired {
+			req = append(req, label)
+		} else {
+			opt = append(opt, label)
 		}
 	}
-	var parts []string
-	if approved > 0 {
-		parts = append(parts, fmt.Sprintf("%d approved", approved))
+	return strings.Join(req, " "), strings.Join(opt, " ")
+}
+
+func shortVoteLabel(vote int) string {
+	switch {
+	case vote >= 5:
+		return "✓"
+	case vote == -5:
+		return "⏳"
+	case vote == -10:
+		return "✗"
+	default:
+		return "○"
 	}
-	if waiting > 0 {
-		parts = append(parts, fmt.Sprintf("%d waiting", waiting))
-	}
-	if rejected > 0 {
-		parts = append(parts, fmt.Sprintf("%d rejected", rejected))
-	}
-	if noVote > 0 {
-		parts = append(parts, fmt.Sprintf("%d pending", noVote))
-	}
-	return strings.Join(parts, ", ")
 }
 
 func voteIcon(vote int) string {

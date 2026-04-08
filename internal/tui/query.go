@@ -68,6 +68,9 @@ type queryModel struct {
 	input     textinput.Model
 	pickItems []string
 	pickIdx   int
+
+	termWidth  int
+	termHeight int
 }
 
 func newQueryModel(client *api.Client, queryID string) queryModel {
@@ -105,10 +108,12 @@ func newQueryModel(client *api.Client, queryID string) queryModel {
 	ti.Width = 40
 
 	return queryModel{
-		client:  client,
-		queryID: queryID,
-		table:   t,
-		input:   ti,
+		client:     client,
+		queryID:    queryID,
+		table:      t,
+		input:      ti,
+		termWidth:  120,
+		termHeight: 24,
 	}
 }
 
@@ -136,6 +141,16 @@ func fetchWorkItem(client *api.Client, id int) tea.Cmd {
 
 func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.termWidth = msg.Width
+		m.termHeight = msg.Height
+		// Reserve lines for title, status, help, etc.
+		h := max(m.termHeight-8, 5)
+		m.table.SetHeight(h)
+		if m.loaded {
+			m.resizeColumns()
+		}
+		return m, nil
 	case errMsg:
 		m.err = msg.err
 		return m, nil
@@ -206,6 +221,16 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 				m.selCol = 0
 				m.msg = ""
 				m.table.SetStyles(m.unfocusedStyles())
+				return m, nil
+			}
+		case "d":
+			if len(m.rows) > 0 {
+				row := m.table.Cursor()
+				id := m.rows[row][1] // column 1 = ID
+				url := fmt.Sprintf("%s/%s/_workitems/edit/%s",
+					m.client.BaseURL(), m.client.Project(), id)
+				openBrowser(url)
+				m.msg = fmt.Sprintf("Opened work item %s in browser", id)
 				return m, nil
 			}
 		case "n":
@@ -421,6 +446,9 @@ func (m queryModel) view() string {
 
 	var b strings.Builder
 
+	b.WriteString(titleStyle.Render("Query"))
+	b.WriteString("\n")
+
 	// Render custom table view when selecting/editing a column
 	if m.mode == modeSelect || m.mode == modeEdit || m.mode == modePick {
 		b.WriteString(m.renderWithHighlight())
@@ -456,7 +484,7 @@ func (m queryModel) view() string {
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  n: new  r: refresh  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  d: details  n: new  r: refresh  q: quit\n")
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:
