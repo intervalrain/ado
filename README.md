@@ -8,6 +8,41 @@
 
 輕量級 Azure DevOps CLI 工具，提供 CLI 指令與互動式 TUI 介面，採用 CQRS + MediatR 模式設計。
 
+### 前置需求
+
+| 項目 | 版本 | 說明 |
+|------|------|------|
+| [Go](https://go.dev/dl/) | 1.24+ | 編譯所需 |
+| [Git](https://git-scm.com/) | 任意 | PR 功能需要在 git repo 中執行 |
+| Azure DevOps PAT | — | [建立 Personal Access Token](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate) |
+
+### 快速開始
+
+```bash
+# 1. 編譯
+make build
+
+# 2. 安裝到系統路徑（之後可直接用 ado 指令）
+make install
+
+# 3. 設定環境變數
+cp .env.example .env
+# 編輯 .env 填入你的 Azure DevOps 設定
+
+# 4. 啟動 TUI
+ado tui
+```
+
+#### 跨平台編譯
+
+```bash
+# 編譯全部平台（linux/darwin/windows × amd64/arm64）
+make cross
+
+# 產出在 dist/ 目錄下
+ls dist/
+```
+
 ### 安裝與設定
 
 ```bash
@@ -200,6 +235,41 @@ internal/
 ## English
 
 Lightweight Azure DevOps CLI tool with both CLI commands and an interactive TUI, built with a CQRS + MediatR-style architecture.
+
+### Prerequisites
+
+| Item | Version | Notes |
+|------|---------|-------|
+| [Go](https://go.dev/dl/) | 1.24+ | Required for building |
+| [Git](https://git-scm.com/) | any | PR features require a git repo |
+| Azure DevOps PAT | — | [Create a Personal Access Token](https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate) |
+
+### Quick Start
+
+```bash
+# 1. Build
+make build
+
+# 2. Install to system PATH (use `ado` from anywhere)
+make install
+
+# 3. Configure
+cp .env.example .env
+# Edit .env with your Azure DevOps settings
+
+# 4. Launch TUI
+ado tui
+```
+
+#### Cross-platform Build
+
+```bash
+# Build for all platforms (linux/darwin/windows × amd64/arm64)
+make cross
+
+# Output in dist/
+ls dist/
+```
 
 ### Setup
 
