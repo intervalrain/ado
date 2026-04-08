@@ -31,6 +31,21 @@ func RepoName() (string, error) {
 	return name, nil
 }
 
+// HasRemoteBranch checks if a branch exists on the remote.
+func HasRemoteBranch(branch string) bool {
+	err := exec.Command("git", "ls-remote", "--exit-code", "--heads", "origin", branch).Run()
+	return err == nil
+}
+
+// PushBranch pushes the current branch to the remote.
+func PushBranch(branch string) error {
+	cmd := exec.Command("git", "push", "-u", "origin", branch)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // DefaultBranch returns the default branch (main or master).
 func DefaultBranch() string {
 	out, err := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short").Output()

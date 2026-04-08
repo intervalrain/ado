@@ -246,6 +246,13 @@ func (m prCreateModel) submit() tea.Cmd {
 	_ = c.Save()
 
 	return func() tea.Msg {
+		// Ensure source branch is pushed to remote
+		if !git.HasRemoteBranch(srcBranch) {
+			if err := git.PushBranch(srcBranch); err != nil {
+				return errMsg{fmt.Errorf("push branch: %w", err)}
+			}
+		}
+
 		pr, err := client.CreatePullRequest(api.CreatePullRequestInput{
 			RepoID:       repoID,
 			Title:        title,

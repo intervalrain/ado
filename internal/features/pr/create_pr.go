@@ -57,6 +57,14 @@ func (h *CreatePRHandler) Handle(ctx context.Context, req cqrs.Request, w io.Wri
 		targetBranch = git.DefaultBranch()
 	}
 
+	// Ensure source branch is pushed to remote
+	if !git.HasRemoteBranch(srcBranch) {
+		fmt.Fprintf(w, "Pushing branch %s to origin...\n", srcBranch)
+		if err := git.PushBranch(srcBranch); err != nil {
+			return fmt.Errorf("push branch: %w", err)
+		}
+	}
+
 	fmt.Fprintf(w, "Creating PR: %s → %s in %s\n", srcBranch, targetBranch, repoName)
 
 	pr, err := h.client.CreatePullRequest(api.CreatePullRequestInput{
