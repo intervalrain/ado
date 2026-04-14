@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -11,17 +9,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rainhu/ado/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 type settingsSavedMsg struct{}
 
 type settingsField struct {
-	label    string
-	envKey   string // for .env fields
-	yamlKey  string // for yaml fields
-	section  string // "ado" or "summary"
-	input    textinput.Model
+	label   string
+	key     string // yaml key path for reference
+	section string // "ado", "summary", or "llm"
+	input   textinput.Model
 }
 
 type settingsModel struct {
@@ -30,23 +26,22 @@ type settingsModel struct {
 	editing bool
 	saved   bool
 	err     error
-	envPath string
-	sumCfg  *config.SummaryConfig
+	cfg     *config.Config
 }
 
-func newSettingsModel(cfg *config.Config, sumCfg *config.SummaryConfig) settingsModel {
+func newSettingsModel(cfg *config.Config) settingsModel {
 	var fields []settingsField
 
-	// ADO connection settings (.env)
+	// ADO connection settings
 	adoKeys := []struct {
-		label, envKey, value string
+		label, key, value string
 	}{
-		{"Org", "ADO_ORG", cfg.Org},
-		{"Project", "ADO_PROJECT", cfg.Project},
-		{"PAT", "ADO_PAT", cfg.PAT},
-		{"Query ID", "ADO_QUERY_ID", cfg.QueryID},
-		{"Assignee", "ADO_ASSIGNEE", cfg.Assignee},
-		{"Team", "ADO_TEAM", cfg.Team},
+		{"Org", "org", cfg.Org},
+		{"Project", "project", cfg.Project},
+		{"PAT", "pat", cfg.PAT},
+		{"Query ID", "query_id", cfg.QueryID},
+		{"Assignee", "assignee", cfg.Assignee},
+		{"Team", "team", cfg.Team},
 	}
 	for _, k := range adoKeys {
 		ti := textinput.New()
@@ -55,45 +50,60 @@ func newSettingsModel(cfg *config.Config, sumCfg *config.SummaryConfig) settings
 		ti.Width = 60
 		fields = append(fields, settingsField{
 			label:   k.label,
-			envKey:  k.envKey,
+			key:     k.key,
 			section: "ado",
 			input:   ti,
 		})
 	}
 
-	// Summary settings (~/.ado/config.yaml)
-	if sumCfg != nil {
-		sumKeys := []struct {
-			label, yamlKey, value string
-		}{
-			{"Days", "summary.days", strconv.Itoa(sumCfg.Summary.Days)},
-			{"Repos", "summary.repos", strings.Join(sumCfg.Summary.Repos, ",")},
-			{"Template", "summary.template", sumCfg.Summary.Template},
-			{"Author", "summary.author", sumCfg.Summary.Author},
-			{"LLM Provider", "llm.provider", sumCfg.LLM.Provider},
-			{"LLM Model", "llm.model", sumCfg.LLM.Model},
-			{"LLM API Key Env", "llm.api_key_env", sumCfg.LLM.APIKeyEnv},
-			{"LLM Base URL", "llm.base_url", sumCfg.LLM.BaseURL},
-			{"LLM Max Tokens", "llm.max_tokens", strconv.Itoa(sumCfg.LLM.MaxTokens)},
-		}
-		for _, k := range sumKeys {
-			ti := textinput.New()
-			ti.SetValue(k.value)
-			ti.CharLimit = 512
-			ti.Width = 60
-			fields = append(fields, settingsField{
-				label:   k.label,
-				yamlKey: k.yamlKey,
-				section: "summary",
-				input:   ti,
-			})
-		}
+	// Summary settings
+	sumKeys := []struct {
+		label, key, value string
+	}{
+		{"Days", "summary.days", strconv.Itoa(cfg.Summary.Days)},
+		{"Repos", "summary.repos", strings.Join(cfg.Summary.Repos, ",")},
+		{"Template", "summary.template", cfg.Summary.Template},
+		{"Author", "summary.author", cfg.Summary.Author},
+	}
+	for _, k := range sumKeys {
+		ti := textinput.New()
+		ti.SetValue(k.value)
+		ti.CharLimit = 512
+		ti.Width = 60
+		fields = append(fields, settingsField{
+			label:   k.label,
+			key:     k.key,
+			section: "summary",
+			input:   ti,
+		})
+	}
+
+	// LLM settings
+	llmKeys := []struct {
+		label, key, value string
+	}{
+		{"Provider", "llm.provider", cfg.LLM.Provider},
+		{"Model", "llm.model", cfg.LLM.Model},
+		{"API Key Env", "llm.api_key_env", cfg.LLM.APIKeyEnv},
+		{"Base URL", "llm.base_url", cfg.LLM.BaseURL},
+		{"Max Tokens", "llm.max_tokens", strconv.Itoa(cfg.LLM.MaxTokens)},
+	}
+	for _, k := range llmKeys {
+		ti := textinput.New()
+		ti.SetValue(k.value)
+		ti.CharLimit = 256
+		ti.Width = 60
+		fields = append(fields, settingsField{
+			label:   k.label,
+			key:     k.key,
+			section: "llm",
+			input:   ti,
+		})
 	}
 
 	return settingsModel{
-		fields:  fields,
-		envPath: cfg.EnvPath(),
-		sumCfg:  sumCfg,
+		fields: fields,
+		cfg:    cfg,
 	}
 }
 
@@ -158,80 +168,61 @@ func (m settingsModel) updateEditing(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 
 func (m settingsModel) save() tea.Cmd {
 	return func() tea.Msg {
-		// Save .env fields
-		var envLines []string
+		cfg := m.cfg
+
 		for _, f := range m.fields {
-			if f.section == "ado" {
-				envLines = append(envLines, fmt.Sprintf("%s=%s", f.envKey, f.input.Value()))
-			}
-		}
-		content := strings.Join(envLines, "\n") + "\n"
-		if err := os.WriteFile(m.envPath, []byte(content), 0600); err != nil {
-			return errMsg{err}
-		}
-
-		// Save summary config fields to ~/.ado/config.yaml
-		if m.sumCfg != nil {
-			if err := m.saveSummaryConfig(); err != nil {
-				return errMsg{err}
-			}
-		}
-
-		return settingsSavedMsg{}
-	}
-}
-
-func (m settingsModel) saveSummaryConfig() error {
-	cfg := m.sumCfg
-
-	for _, f := range m.fields {
-		if f.section != "summary" {
-			continue
-		}
-		val := f.input.Value()
-		switch f.yamlKey {
-		case "summary.days":
-			if n, err := strconv.Atoi(val); err == nil {
-				cfg.Summary.Days = n
-			}
-		case "summary.repos":
-			if val != "" {
-				cfg.Summary.Repos = strings.Split(val, ",")
-				for i := range cfg.Summary.Repos {
-					cfg.Summary.Repos[i] = strings.TrimSpace(cfg.Summary.Repos[i])
+			val := f.input.Value()
+			switch f.key {
+			// ADO
+			case "org":
+				cfg.Org = val
+			case "project":
+				cfg.Project = val
+			case "pat":
+				cfg.PAT = val
+			case "query_id":
+				cfg.QueryID = val
+			case "assignee":
+				cfg.Assignee = val
+			case "team":
+				cfg.Team = val
+			// Summary
+			case "summary.days":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.Summary.Days = n
+				}
+			case "summary.repos":
+				if val != "" {
+					cfg.Summary.Repos = strings.Split(val, ",")
+					for i := range cfg.Summary.Repos {
+						cfg.Summary.Repos[i] = strings.TrimSpace(cfg.Summary.Repos[i])
+					}
+				}
+			case "summary.template":
+				cfg.Summary.Template = val
+			case "summary.author":
+				cfg.Summary.Author = val
+			// LLM
+			case "llm.provider":
+				cfg.LLM.Provider = val
+			case "llm.model":
+				cfg.LLM.Model = val
+			case "llm.api_key_env":
+				cfg.LLM.APIKeyEnv = val
+			case "llm.base_url":
+				cfg.LLM.BaseURL = val
+			case "llm.max_tokens":
+				if n, err := strconv.Atoi(val); err == nil {
+					cfg.LLM.MaxTokens = n
 				}
 			}
-		case "summary.template":
-			cfg.Summary.Template = val
-		case "summary.author":
-			cfg.Summary.Author = val
-		case "llm.provider":
-			cfg.LLM.Provider = val
-		case "llm.model":
-			cfg.LLM.Model = val
-		case "llm.api_key_env":
-			cfg.LLM.APIKeyEnv = val
-		case "llm.base_url":
-			cfg.LLM.BaseURL = val
-		case "llm.max_tokens":
-			if n, err := strconv.Atoi(val); err == nil {
-				cfg.LLM.MaxTokens = n
-			}
 		}
-	}
 
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
+		if err := config.Save(cfg); err != nil {
+			return errMsg{err}
+		}
+		return settingsSavedMsg{}
 	}
-
-	dir := filepath.Join(os.Getenv("HOME"), ".ado")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create ~/.ado: %w", err)
-	}
-
-	path := filepath.Join(dir, "config.yaml")
-	return os.WriteFile(path, data, 0644)
 }
 
 func (m settingsModel) view() string {
@@ -251,16 +242,17 @@ func (m settingsModel) view() string {
 	prevSection := ""
 
 	for i, f := range m.fields {
-		// Section headers
 		if f.section != prevSection {
 			if prevSection != "" {
 				b.WriteString("\n")
 			}
 			switch f.section {
 			case "ado":
-				b.WriteString(sectionHeader.Render("  ADO Connection (.env)"))
+				b.WriteString(sectionHeader.Render("  ADO Connection"))
 			case "summary":
-				b.WriteString(sectionHeader.Render("  Summary Config (~/.ado/config.yaml)"))
+				b.WriteString(sectionHeader.Render("  Summary"))
+			case "llm":
+				b.WriteString(sectionHeader.Render("  LLM"))
 			}
 			b.WriteString("\n")
 			prevSection = f.section
@@ -276,7 +268,7 @@ func (m settingsModel) view() string {
 			b.WriteString(fmt.Sprintf("%s%s : %s\n", cursor, label, f.input.View()))
 		} else {
 			value := f.input.Value()
-			if f.envKey == "ADO_PAT" {
+			if f.key == "pat" {
 				value = maskPAT(value)
 			}
 			style := lipgloss.NewStyle()
@@ -289,7 +281,7 @@ func (m settingsModel) view() string {
 	}
 
 	if m.saved {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).MarginTop(1).Render("\n  Saved"))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).MarginTop(1).Render("\n  Saved to " + config.ConfigPath()))
 	}
 	if m.err != nil {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).MarginTop(1).Render(fmt.Sprintf("\n  Error: %v", m.err)))

@@ -35,10 +35,10 @@ type GenerateSummaryResult struct {
 type GenerateSummaryHandler struct {
 	client    *api.Client
 	llmClient llm.Client
-	cfg       *configpkg.SummaryConfig
+	cfg       *configpkg.Config
 }
 
-func NewGenerateSummaryHandler(client *api.Client, llmClient llm.Client, cfg *configpkg.SummaryConfig) *GenerateSummaryHandler {
+func NewGenerateSummaryHandler(client *api.Client, llmClient llm.Client, cfg *configpkg.Config) *GenerateSummaryHandler {
 	return &GenerateSummaryHandler{client: client, llmClient: llmClient, cfg: cfg}
 }
 
