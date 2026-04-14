@@ -28,22 +28,36 @@ type SummarySection struct {
 	Repos    []string `yaml:"repos"`
 	Template string   `yaml:"template"`
 	Author   string   `yaml:"author"`
+	Output   string   `yaml:"output"`
 }
 
 type LLMSection struct {
 	Provider  string `yaml:"provider"`
 	Model     string `yaml:"model"`
+	APIKey    string `yaml:"api_key"`
 	APIKeyEnv string `yaml:"api_key_env"`
 	BaseURL   string `yaml:"base_url"`
 	MaxTokens int    `yaml:"max_tokens"`
 }
 
-// ResolvedAPIKey reads the actual API key from the environment variable named in APIKeyEnv.
+// ResolvedAPIKey returns the API key, preferring the direct api_key field
+// over the environment variable named in api_key_env.
 func (l *LLMSection) ResolvedAPIKey() string {
+	if l.APIKey != "" {
+		return l.APIKey
+	}
 	if l.APIKeyEnv == "" {
 		return ""
 	}
 	return os.Getenv(l.APIKeyEnv)
+}
+
+// Validate checks that required fields (Org, PAT) are set.
+func (c *Config) Validate() error {
+	if c.Org == "" || c.PAT == "" {
+		return fmt.Errorf("org and pat are required — set them in %s or via ADO_ORG / ADO_PAT env vars", ConfigPath())
+	}
+	return nil
 }
 
 // ConfigPath returns the default config file path.
@@ -57,6 +71,7 @@ func Load() (*Config, error) {
 		Summary: SummarySection{
 			Days:     7,
 			Template: "~/.ado/template.md",
+			Output:   "~/.ado/reports",
 		},
 		LLM: LLMSection{
 			Provider:  "claude",
@@ -85,9 +100,8 @@ func Load() (*Config, error) {
 	envOverride(&cfg.Assignee, "ADO_ASSIGNEE")
 	envOverride(&cfg.Team, "ADO_TEAM")
 
-	if cfg.Org == "" || cfg.PAT == "" {
-		return nil, fmt.Errorf("org and pat are required — set them in %s or via ADO_ORG / ADO_PAT env vars", path)
-	}
+	// Note: org/pat validation moved to individual commands.
+	// TUI settings screen needs to load even when unconfigured.
 
 	// Apply defaults for zero values
 	if cfg.Summary.Days == 0 {
@@ -108,6 +122,7 @@ func Load() (*Config, error) {
 
 	// Expand ~ in paths
 	cfg.Summary.Template = expandHome(cfg.Summary.Template)
+	cfg.Summary.Output = expandHome(cfg.Summary.Output)
 	for i, r := range cfg.Summary.Repos {
 		cfg.Summary.Repos[i] = expandHome(r)
 	}

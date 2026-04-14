@@ -57,10 +57,13 @@ type openaiResponse struct {
 	} `json:"usage"`
 }
 
-func (c *openaiClient) Complete(ctx context.Context, messages []Message) (*Response, error) {
-	msgs := make([]openaiMsg, len(messages))
-	for i, m := range messages {
-		msgs[i] = openaiMsg{Role: m.Role, Content: m.Content}
+func (c *openaiClient) Complete(ctx context.Context, system string, messages []Message) (*Response, error) {
+	msgs := make([]openaiMsg, 0, len(messages)+1)
+	if system != "" {
+		msgs = append(msgs, openaiMsg{Role: "system", Content: system})
+	}
+	for _, m := range messages {
+		msgs = append(msgs, openaiMsg{Role: m.Role, Content: m.Content})
 	}
 
 	body := openaiRequest{

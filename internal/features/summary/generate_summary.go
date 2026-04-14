@@ -89,21 +89,23 @@ func (h *GenerateSummaryHandler) Handle(ctx context.Context, req cqrs.Request, w
 		return nil
 	}
 
-	// Step 3: Render template
+	// Step 3: Build system prompt (from template) and user data message
 	data := tmpl.TemplateData{
 		DateRange: tmpl.FormatDateRange(days),
 		Commits:   commits,
 		WorkItems: workItems,
 	}
-	prompt, err := tmpl.RenderPrompt(templatePath, data)
+	system, tmplSource, err := tmpl.LoadSystemPrompt(templatePath, data.DateRange)
 	if err != nil {
-		return fmt.Errorf("render template: %w", err)
+		return fmt.Errorf("load template: %w", err)
 	}
+	fmt.Fprintf(w, "Using template: %s\n", tmplSource)
+	userMsg := tmpl.BuildUserMessage(data)
 
 	// Step 4: Call LLM
 	fmt.Fprintf(w, "Generating summary with LLM...\n\n")
-	resp, err := h.llmClient.Complete(ctx, []llm.Message{
-		{Role: "user", Content: prompt},
+	resp, err := h.llmClient.Complete(ctx, system, []llm.Message{
+		{Role: "user", Content: userMsg},
 	})
 	if err != nil {
 		return fmt.Errorf("LLM call: %w", err)

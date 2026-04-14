@@ -28,9 +28,10 @@ func newClaudeClient(cfg Config) *claudeClient {
 }
 
 type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	Messages  []claudeMsg     `json:"messages"`
+	Model     string      `json:"model"`
+	MaxTokens int         `json:"max_tokens"`
+	System    string      `json:"system,omitempty"`
+	Messages  []claudeMsg `json:"messages"`
 }
 
 type claudeMsg struct {
@@ -49,7 +50,7 @@ type claudeResponse struct {
 	} `json:"usage"`
 }
 
-func (c *claudeClient) Complete(ctx context.Context, messages []Message) (*Response, error) {
+func (c *claudeClient) Complete(ctx context.Context, system string, messages []Message) (*Response, error) {
 	msgs := make([]claudeMsg, len(messages))
 	for i, m := range messages {
 		msgs[i] = claudeMsg{Role: m.Role, Content: m.Content}
@@ -58,6 +59,7 @@ func (c *claudeClient) Complete(ctx context.Context, messages []Message) (*Respo
 	body := claudeRequest{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,
+		System:    system,
 		Messages:  msgs,
 	}
 

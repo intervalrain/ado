@@ -213,9 +213,15 @@ func (m Model) updateSummary(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "esc":
-			if m.summaryMdl.step == summaryStepViewing || m.summaryMdl.step == summaryStepActions {
+			switch m.summaryMdl.step {
+			case summaryStepSelectCommits, summaryStepViewing, summaryStepActions, summaryStepSaved:
 				m.screen = screenMenu
 				return m, nil
+			case summaryStepSavePrompt:
+				if !m.summaryMdl.editingPath {
+					m.summaryMdl.step = summaryStepViewing
+					return m, nil
+				}
 			}
 		case "ctrl+c":
 			return m, tea.Quit

@@ -30,6 +30,13 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
+		// TUI can start without org/pat so users can configure via Settings
+		if cmd.Name() != "tui" {
+			if err := cfg.Validate(); err != nil {
+				return err
+			}
+		}
+
 		client := api.NewClient(cfg)
 		mediator = cqrs.NewMediator()
 

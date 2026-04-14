@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rainhu/ado/internal/api"
 	"github.com/rainhu/ado/internal/tui"
@@ -18,9 +16,6 @@ var tuiCmd = &cobra.Command{
 		id := tuiQueryID
 		if id == "" {
 			id = cfg.QueryID
-		}
-		if id == "" {
-			return fmt.Errorf("query ID is required: use -i flag or set ADO_QUERY_ID")
 		}
 
 		client := api.NewClient(cfg)

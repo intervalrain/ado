@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.0.3] - 2026-04-14
+
+### Added
+- Pipeline monitor feature in TUI (`internal/tui/pipeline.go`)
+- Summary report save-to-file flow with editable path in TUI
+- Press Enter on saved screen to open the report folder in OS file manager
+- File picker component for selecting template/output paths (`internal/tui/filepicker.go`)
+- LLM `Complete` signature now accepts a system prompt; Claude uses top-level `system` field, OpenAI prepends a `role:"system"` message
+- Summary template split into system prompt (format rules) + user message (commits/work items data) so the LLM actually follows the template
+- `Using template: <source>` log line to make template fallback behavior visible
+- Extended settings screen with summary/LLM sections
+
+### Changed
+- Unified config into single `~/.ado/config.yaml` (replaces separate `.env` + template/output files)
+- `default_template.md` rewritten as pure format instructions with required section structure and Traditional Chinese output
+
 ## [v0.0.2] - 2026-04-08
 
 ### Added

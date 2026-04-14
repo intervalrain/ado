@@ -26,7 +26,7 @@ type Usage struct {
 
 // Client is the abstraction over LLM providers.
 type Client interface {
-	Complete(ctx context.Context, messages []Message) (*Response, error)
+	Complete(ctx context.Context, system string, messages []Message) (*Response, error)
 }
 
 // Config holds provider-specific settings.
