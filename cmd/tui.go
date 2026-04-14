@@ -24,7 +24,7 @@ var tuiCmd = &cobra.Command{
 		}
 
 		client := api.NewClient(cfg)
-		m := tui.NewModel(client, id)
+		m := tui.NewModel(client, id, llmClient, cfg)
 		p := tea.NewProgram(m)
 		_, err := p.Run()
 		return err
