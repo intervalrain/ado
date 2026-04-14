@@ -13,6 +13,7 @@ build:
 ## Install to /usr/local/bin
 install: build
 	sudo cp $(APP_NAME) /usr/local/bin/$(APP_NAME)
+	sudo codesign -f -s - /usr/local/bin/$(APP_NAME)
 
 ## Cross-compile for all platforms
 cross:
