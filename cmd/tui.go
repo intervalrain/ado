@@ -3,6 +3,7 @@ package cmd
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rainhu/ado/internal/api"
+	"github.com/rainhu/ado/internal/logging"
 	"github.com/rainhu/ado/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -19,9 +20,15 @@ var tuiCmd = &cobra.Command{
 		}
 
 		client := api.NewClient(cfg)
+		logging.L().Info("tui session started", "query_id", id)
 		m := tui.NewModel(client, id, llmClient, cfg)
 		p := tea.NewProgram(m)
 		_, err := p.Run()
+		if err != nil {
+			logging.L().Error("tui session ended with error", "error", err.Error())
+		} else {
+			logging.L().Info("tui session ended")
+		}
 		return err
 	},
 }

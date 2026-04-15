@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/rainhu/ado/internal/config"
+	"github.com/rainhu/ado/internal/logging"
 )
 
 type Client struct {
@@ -22,16 +24,37 @@ func NewClient(cfg *config.Config) *Client {
 func (c *Client) do(req *http.Request, result any) error {
 	req.SetBasicAuth("", c.cfg.PAT)
 
+	start := time.Now()
+	log := logging.L()
 	resp, err := c.http.Do(req)
 	if err != nil {
+		log.Error("http request error",
+			"method", req.Method,
+			"url", req.URL.String(),
+			"elapsed_ms", time.Since(start).Milliseconds(),
+			"error", err.Error(),
+		)
 		return err
 	}
 	defer resp.Body.Close()
 
+	elapsedMS := time.Since(start).Milliseconds()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Error("http non-2xx",
+			"method", req.Method,
+			"url", req.URL.String(),
+			"status", resp.StatusCode,
+			"elapsed_ms", elapsedMS,
+		)
 		return fmt.Errorf("API %d: %s", resp.StatusCode, string(body))
 	}
+	log.Info("http ok",
+		"method", req.Method,
+		"url", req.URL.String(),
+		"status", resp.StatusCode,
+		"elapsed_ms", elapsedMS,
+	)
 
 	if result != nil {
 		return json.NewDecoder(resp.Body).Decode(result)
