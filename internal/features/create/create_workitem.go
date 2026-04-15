@@ -17,6 +17,7 @@ type CreateWorkItemRequest struct {
 	Description string
 	Estimate    float64
 	Tags        string
+	ParentID    int
 }
 
 func (r *CreateWorkItemRequest) RequestName() string { return RequestName }
@@ -61,11 +62,29 @@ func (h *CreateWorkItemHandler) Handle(ctx context.Context, req cqrs.Request, w 
 		ops = append(ops, api.PatchOp{Op: "add", Path: "/fields/System.AssignedTo", Value: h.client.Config().Assignee})
 	}
 
+	// Link to parent work item (Hierarchy-Reverse = parent)
+	if r.ParentID > 0 {
+		parentURL := fmt.Sprintf("%s/%s/_apis/wit/workItems/%d",
+			h.client.BaseURL(), h.client.Project(), r.ParentID)
+		ops = append(ops, api.PatchOp{
+			Op:   "add",
+			Path: "/relations/-",
+			Value: map[string]string{
+				"rel": "System.LinkTypes.Hierarchy-Reverse",
+				"url": parentURL,
+			},
+		})
+	}
+
 	wi, err := h.client.CreateWorkItem(r.Type, ops)
 	if err != nil {
 		return fmt.Errorf("create work item: %w", err)
 	}
 
-	fmt.Fprintf(w, "Created %s #%d: %s\n", r.Type, wi.ID, wi.Fields.Title)
+	if r.ParentID > 0 {
+		fmt.Fprintf(w, "Created %s #%d: %s (parent: #%d)\n", r.Type, wi.ID, wi.Fields.Title, r.ParentID)
+	} else {
+		fmt.Fprintf(w, "Created %s #%d: %s\n", r.Type, wi.ID, wi.Fields.Title)
+	}
 	return nil
 }

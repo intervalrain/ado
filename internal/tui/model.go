@@ -7,6 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rainhu/ado/internal/api"
+	configpkg "github.com/rainhu/ado/internal/config"
+	"github.com/rainhu/ado/internal/llm"
 )
 
 var (
@@ -29,11 +31,15 @@ const (
 	screenSettings
 	screenCreate
 	screenPR
+	screenSummary
+	screenPipeline
 )
 
 type Model struct {
-	client  *api.Client
-	queryID string
+	client    *api.Client
+	queryID   string
+	llmClient llm.Client
+	sumCfg    *configpkg.Config
 
 	screen      screen
 	cursor      int
@@ -42,17 +48,23 @@ type Model struct {
 	settingsMdl settingsModel
 	createMdl   createModel
 	prMdl       prModel
+	summaryMdl  summaryModel
+	pipelineMdl pipelineModel
 }
 
-func NewModel(client *api.Client, queryID string) Model {
+func NewModel(client *api.Client, queryID string, llmClient llm.Client, sumCfg *configpkg.Config) Model {
 	return Model{
-		client:  client,
-		queryID: queryID,
-		screen:  screenMenu,
+		client:    client,
+		queryID:   queryID,
+		llmClient: llmClient,
+		sumCfg:    sumCfg,
+		screen:    screenMenu,
 		items: []menuItem{
 			{label: "Query", desc: "Run a saved query and browse work items"},
 			{label: "New", desc: "Create a new work item"},
 			{label: "Pull Requests", desc: "Browse pull requests by repository"},
+			{label: "Pipelines", desc: "Browse pipeline definitions and builds"},
+			{label: "Summary", desc: "Generate weekly summary report"},
 			{label: "Settings", desc: "View current configuration"},
 		},
 	}
@@ -72,6 +84,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCreate(msg)
 	case screenPR:
 		return m.updatePR(msg)
+	case screenPipeline:
+		return m.updatePipeline(msg)
+	case screenSummary:
+		return m.updateSummary(msg)
 	default:
 		return m.updateMenu(msg)
 	}
@@ -105,8 +121,18 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prMdl = newPRModel(m.client)
 				m.screen = screenPR
 				return m, m.prMdl.init()
-			case 3: // Settings
-				m.settingsMdl = newSettingsModel(m.client.Config())
+			case 3: // Pipelines
+				m.pipelineMdl = newPipelineModel(m.client)
+				m.screen = screenPipeline
+				return m, m.pipelineMdl.init()
+			case 4: // Summary
+				commitsReady = false
+				itemsReady = false
+				m.summaryMdl = newSummaryModel(m.client, m.llmClient, m.sumCfg)
+				m.screen = screenSummary
+				return m, m.summaryMdl.init()
+			case 5: // Settings
+				m.settingsMdl = newSettingsModel(m.sumCfg)
 				m.screen = screenSettings
 				return m, nil
 			}
@@ -166,6 +192,46 @@ func (m Model) updatePR(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updatePipeline(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			if m.pipelineMdl.view == pipelineViewList {
+				m.screen = screenMenu
+				return m, nil
+			}
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	var cmd tea.Cmd
+	m.pipelineMdl, cmd = m.pipelineMdl.update(msg)
+	return m, cmd
+}
+
+func (m Model) updateSummary(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			switch m.summaryMdl.step {
+			case summaryStepSelectCommits, summaryStepViewing, summaryStepActions, summaryStepSaved:
+				m.screen = screenMenu
+				return m, nil
+			case summaryStepSavePrompt:
+				if !m.summaryMdl.editingPath {
+					m.summaryMdl.step = summaryStepViewing
+					return m, nil
+				}
+			}
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	var cmd tea.Cmd
+	m.summaryMdl, cmd = m.summaryMdl.update(msg)
+	return m, cmd
+}
+
 func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Only allow esc to go back when not editing a field
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && !m.settingsMdl.editing {
@@ -192,6 +258,10 @@ func (m Model) View() string {
 		return m.createMdl.view()
 	case screenPR:
 		return m.prMdl.viewStr()
+	case screenPipeline:
+		return m.pipelineMdl.viewStr()
+	case screenSummary:
+		return m.summaryMdl.view()
 	default:
 		return m.viewMenu()
 	}
