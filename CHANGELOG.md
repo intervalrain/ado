@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.0.5] - 2026-04-16
+
+### Added
+- `/` filter in query TUI — live substring match across all cells, with count shown in title
+- Query rows sorted by ID on load
+- Per-row State coloring (active/new/closed/resolved/removed)
+
+### Changed
+- Query view now uses the custom renderer for all modes, so State colors render correctly without breaking column alignment
+
 ## [v0.0.4] - 2026-04-15
 
 ### Added
