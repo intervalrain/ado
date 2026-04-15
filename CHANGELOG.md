@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.0.4] - 2026-04-15
+
+### Added
+- Parent link support in `ado new` — `--parent/-p <id>` flag and new Parent step in TUI create wizard
+- File-based logging across mediator, HTTP client, and TUI entry points (`internal/logging/logger.go`)
+
 ## [v0.0.3] - 2026-04-14
 
 ### Added
