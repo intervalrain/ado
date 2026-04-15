@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,21 @@ import (
 	"github.com/rainhu/ado/internal/api"
 	"github.com/rainhu/ado/internal/util"
 )
+
+var stateStyles = map[string]lipgloss.Style{
+	"active":   lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
+	"new":      lipgloss.NewStyle().Foreground(lipgloss.Color("255")),
+	"closed":   lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
+	"resolved": lipgloss.NewStyle().Foreground(lipgloss.Color("208")),
+	"removed":  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+}
+
+func stateStyle(state string) lipgloss.Style {
+	if s, ok := stateStyles[strings.ToLower(strings.TrimSpace(state))]; ok {
+		return s
+	}
+	return lipgloss.NewStyle()
+}
 
 var tableStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
@@ -51,6 +67,7 @@ const (
 	modeSelect                  // ←→ navigate columns in selected row
 	modeEdit                    // editing a cell value
 	modePick                    // picking from a list (e.g. State)
+	modeFilter                  // typing a '/' filter query
 )
 
 type queryModel struct {
@@ -63,11 +80,14 @@ type queryModel struct {
 	msg     string
 	loaded  bool
 
-	mode      queryMode
-	selCol    int
-	input     textinput.Model
-	pickItems []string
-	pickIdx   int
+	mode       queryMode
+	selCol     int
+	input      textinput.Model
+	pickItems  []string
+	pickIdx    int
+	filter     string
+	filterIn   textinput.Model
+	visibleIdx []int
 
 	termWidth  int
 	termHeight int
@@ -107,11 +127,17 @@ func newQueryModel(client *api.Client, queryID string) queryModel {
 	ti.CharLimit = 256
 	ti.Width = 40
 
+	fi := textinput.New()
+	fi.CharLimit = 128
+	fi.Width = 40
+	fi.Prompt = "/"
+
 	return queryModel{
 		client:     client,
 		queryID:    queryID,
 		table:      t,
 		input:      ti,
+		filterIn:   fi,
 		termWidth:  120,
 		termHeight: 24,
 	}
@@ -185,16 +211,21 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 			estimate,
 			remaining,
 		})
-		m.table.SetRows(m.rows)
 		m.pending--
 		if m.pending <= 0 {
 			m.loaded = true
+			m.sortRows()
 			m.resizeColumns()
 		}
+		m.applyTableRows()
 		return m, nil
 	case fieldSavedMsg:
+		id := ""
+		if msg.row >= 0 && msg.row < len(m.rows) {
+			id = m.rows[msg.row][1]
+		}
 		m.msg = fmt.Sprintf("Saved [%s] for work item %s",
-			m.table.Columns()[msg.col].Title, m.rows[msg.row][1])
+			m.table.Columns()[msg.col].Title, id)
 		m.mode = modeSelect
 		return m, nil
 	}
@@ -208,6 +239,8 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		return m.updateEdit(msg)
 	case modePick:
 		return m.updatePick(msg)
+	case modeFilter:
+		return m.updateFilter(msg)
 	}
 	return m, nil
 }
@@ -216,7 +249,7 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "enter":
-			if len(m.rows) > 0 {
+			if m.realRow() >= 0 {
 				m.mode = modeSelect
 				m.selCol = 0
 				m.msg = ""
@@ -224,8 +257,8 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 				return m, nil
 			}
 		case "d":
-			if len(m.rows) > 0 {
-				row := m.table.Cursor()
+			row := m.realRow()
+			if row >= 0 {
 				id := m.rows[row][1] // column 1 = ID
 				url := fmt.Sprintf("%s/%s/_workitems/edit/%s",
 					m.client.BaseURL(), m.client.Project(), id)
@@ -237,12 +270,19 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 			return m, func() tea.Msg { return openCreateMsg{} }
 		case "r":
 			m.rows = nil
+			m.visibleIdx = nil
 			m.table.SetRows(nil)
 			m.loaded = false
 			m.pending = 0
 			m.err = nil
 			m.msg = "Refreshing..."
 			return m, m.fetchQuery
+		case "/":
+			m.mode = modeFilter
+			m.filterIn.SetValue(m.filter)
+			m.filterIn.Focus()
+			m.msg = ""
+			return m, m.filterIn.Cursor.BlinkCmd()
 		}
 	}
 	var cmd tea.Cmd
@@ -270,7 +310,10 @@ func (m queryModel) updateSelect(msg tea.Msg) (queryModel, tea.Cmd) {
 				m.msg = fmt.Sprintf("[%s] is read-only", m.table.Columns()[m.selCol].Title)
 				return m, nil
 			}
-			row := m.table.Cursor()
+			row := m.realRow()
+			if row < 0 {
+				return m, nil
+			}
 			// State column → pick mode
 			if m.selCol == 3 {
 				wiType := m.rows[row][2] // column 2 = Type
@@ -314,11 +357,14 @@ func (m queryModel) updatePick(msg tea.Msg) (queryModel, tea.Cmd) {
 				m.pickIdx++
 			}
 		case "enter":
-			row := m.table.Cursor()
+			row := m.realRow()
+			if row < 0 {
+				return m, nil
+			}
 			col := m.selCol
 			newVal := m.pickItems[m.pickIdx]
 			m.rows[row][col] = newVal
-			m.table.SetRows(m.rows)
+			m.applyTableRows()
 			m.resizeColumns()
 			return m, m.saveField(row, col, newVal)
 		case "esc":
@@ -329,18 +375,51 @@ func (m queryModel) updatePick(msg tea.Msg) (queryModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m queryModel) updateFilter(msg tea.Msg) (queryModel, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "enter":
+			m.filter = m.filterIn.Value()
+			m.filterIn.Blur()
+			m.applyTableRows()
+			m.mode = modeBrowse
+			if m.filter == "" {
+				m.msg = "Filter cleared"
+			} else {
+				m.msg = fmt.Sprintf("Filter: %s (%d rows)", m.filter, len(m.visibleIdx))
+			}
+			return m, nil
+		case "esc":
+			m.filterIn.Blur()
+			m.filterIn.SetValue(m.filter)
+			m.mode = modeBrowse
+			return m, nil
+		}
+	}
+	var cmd tea.Cmd
+	m.filterIn, cmd = m.filterIn.Update(msg)
+	// live filter preview
+	m.filter = m.filterIn.Value()
+	m.applyTableRows()
+	return m, cmd
+}
+
 func (m queryModel) updateEdit(msg tea.Msg) (queryModel, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "enter":
 			m.input.Blur()
-			row := m.table.Cursor()
+			row := m.realRow()
+			if row < 0 {
+				m.mode = modeSelect
+				return m, nil
+			}
 			col := m.selCol
 			newVal := m.input.Value()
 
 			// Update local row
 			m.rows[row][col] = newVal
-			m.table.SetRows(m.rows)
+			m.applyTableRows()
 			m.resizeColumns()
 
 			// Save to ADO
@@ -415,6 +494,55 @@ func (m queryModel) unfocusedStyles() table.Styles {
 	return s
 }
 
+func (m *queryModel) sortRows() {
+	sort.SliceStable(m.rows, func(i, j int) bool {
+		a, _ := strconv.Atoi(m.rows[i][1])
+		b, _ := strconv.Atoi(m.rows[j][1])
+		return a < b
+	})
+}
+
+func (m *queryModel) computeVisible() {
+	needle := strings.ToLower(strings.TrimSpace(m.filter))
+	m.visibleIdx = m.visibleIdx[:0]
+	for i, row := range m.rows {
+		if needle == "" {
+			m.visibleIdx = append(m.visibleIdx, i)
+			continue
+		}
+		for _, cell := range row {
+			if strings.Contains(strings.ToLower(cell), needle) {
+				m.visibleIdx = append(m.visibleIdx, i)
+				break
+			}
+		}
+	}
+}
+
+func (m *queryModel) applyTableRows() {
+	m.computeVisible()
+	display := make([]table.Row, len(m.visibleIdx))
+	for i, idx := range m.visibleIdx {
+		display[i] = append(table.Row(nil), m.rows[idx]...)
+	}
+	m.table.SetRows(display)
+	if c := m.table.Cursor(); c >= len(m.visibleIdx) {
+		if len(m.visibleIdx) == 0 {
+			m.table.SetCursor(0)
+		} else {
+			m.table.SetCursor(len(m.visibleIdx) - 1)
+		}
+	}
+}
+
+func (m queryModel) realRow() int {
+	c := m.table.Cursor()
+	if c < 0 || c >= len(m.visibleIdx) {
+		return -1
+	}
+	return m.visibleIdx[c]
+}
+
 func (m *queryModel) resizeColumns() {
 	headers := []string{"Tags", "ID", "Type", "State", "Title", "Assigned To", "Estimate", "Remaining"}
 	widths := make([]int, len(headers))
@@ -447,14 +575,13 @@ func (m queryModel) view() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Query"))
+	if m.filter != "" && m.mode != modeFilter {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).
+			Render(fmt.Sprintf("  /%s  (%d/%d)", m.filter, len(m.visibleIdx), len(m.rows))))
+	}
 	b.WriteString("\n")
 
-	// Render custom table view when selecting/editing a column
-	if m.mode == modeSelect || m.mode == modeEdit || m.mode == modePick {
-		b.WriteString(m.renderWithHighlight())
-	} else {
-		b.WriteString(tableStyle.Render(m.table.View()))
-	}
+	b.WriteString(m.renderWithHighlight())
 	b.WriteString("\n")
 
 	// Status message
@@ -465,6 +592,8 @@ func (m queryModel) view() string {
 
 	// Edit input / pick list
 	switch m.mode {
+	case modeFilter:
+		fmt.Fprintf(&b, "  Filter: %s\n", m.filterIn.View())
 	case modeEdit:
 		colTitle := m.table.Columns()[m.selCol].Title
 		fmt.Fprintf(&b, "  Edit [%s]: %s\n", colTitle, m.input.View())
@@ -484,13 +613,15 @@ func (m queryModel) view() string {
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  d: details  n: new  r: refresh  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  /: filter  d: details  n: new  r: refresh  q: quit\n")
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:
 		b.WriteString("  enter: save  esc: cancel\n")
 	case modePick:
 		b.WriteString("  ↑↓: select  enter: save  esc: cancel\n")
+	case modeFilter:
+		b.WriteString("  type to filter  enter: apply  esc: cancel\n")
 	}
 	return b.String()
 }
@@ -510,10 +641,13 @@ func (m queryModel) renderWithHighlight() string {
 
 	var b strings.Builder
 
+	colActive := m.mode == modeSelect || m.mode == modeEdit || m.mode == modePick
+	rowActive := colActive || m.mode == modeBrowse || m.mode == modeFilter
+
 	// Header
 	for i, col := range cols {
 		cell := util.PadRight(col.Title, col.Width)
-		if i == m.selCol {
+		if colActive && i == m.selCol {
 			b.WriteString(cellHighlight.Render(cell))
 		} else {
 			b.WriteString(headerStyle.Render(cell))
@@ -534,19 +668,22 @@ func (m queryModel) renderWithHighlight() string {
 	b.WriteString("\n")
 
 	// Rows
-	for ri, row := range m.rows {
+	for ri, idx := range m.visibleIdx {
+		row := m.rows[idx]
+		rowStyle := stateStyle(row[3])
 		for ci, col := range cols {
 			val := ""
 			if ci < len(row) {
 				val = row[ci]
 			}
 			cell := util.PadRight(val, col.Width)
-			if ri == cursorRow && ci == m.selCol {
+			switch {
+			case rowActive && ri == cursorRow && colActive && ci == m.selCol:
 				b.WriteString(cellHighlight.Render(cell))
-			} else if ri == cursorRow {
+			case rowActive && ri == cursorRow:
 				b.WriteString(rowHighlight.Render(cell))
-			} else {
-				b.WriteString(cell)
+			default:
+				b.WriteString(rowStyle.Render(cell))
 			}
 			if ci < len(cols)-1 {
 				b.WriteString(" ")
