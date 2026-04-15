@@ -15,6 +15,7 @@ var (
 	newDesc     string
 	newEstimate float64
 	newTags     string
+	newParent   int
 )
 
 var validTypes = map[string]string{
@@ -51,6 +52,7 @@ Examples:
 			Description: newDesc,
 			Estimate:    newEstimate,
 			Tags:        newTags,
+			ParentID:    newParent,
 		}
 		return mediator.Send(context.Background(), req, os.Stdout)
 	},
@@ -61,5 +63,6 @@ func init() {
 	newCmd.Flags().StringVarP(&newDesc, "desc", "d", "", "description")
 	newCmd.Flags().Float64VarP(&newEstimate, "est", "e", 6, "original estimate (hours), also sets remaining work")
 	newCmd.Flags().StringVar(&newTags, "tags", "", "tags (semicolon-separated)")
+	newCmd.Flags().IntVarP(&newParent, "parent", "p", 0, "parent work item ID to link under")
 	rootCmd.AddCommand(newCmd)
 }

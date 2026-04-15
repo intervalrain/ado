@@ -28,6 +28,7 @@ const (
 	stepTitle
 	stepDescription
 	stepEstimate
+	stepParent
 	stepConfirm
 	stepDone
 )
@@ -54,9 +55,10 @@ type createModel struct {
 	tagAdding   bool // true = typing a new tag
 
 	// Text inputs
-	titleInput textinput.Model
-	descInput  textinput.Model
-	estInput   textinput.Model
+	titleInput  textinput.Model
+	descInput   textinput.Model
+	estInput    textinput.Model
+	parentInput textinput.Model
 
 	// Result
 	resultMsg string
@@ -86,6 +88,11 @@ func newCreateModel(client *api.Client) createModel {
 	tagi.CharLimit = 50
 	tagi.Width = 40
 
+	pi := textinput.New()
+	pi.Placeholder = "Parent work item ID (optional, enter to skip)"
+	pi.CharLimit = 10
+	pi.Width = 20
+
 	return createModel{
 		client:      client,
 		cache:       c,
@@ -96,6 +103,7 @@ func newCreateModel(client *api.Client) createModel {
 		titleInput:  ti,
 		descInput:   di,
 		estInput:    ei,
+		parentInput: pi,
 		tagInput:    tagi,
 	}
 }
@@ -133,6 +141,8 @@ func (m createModel) update(msg tea.Msg) (createModel, tea.Cmd) {
 		return m.updateDesc(msg)
 	case stepEstimate:
 		return m.updateEstimate(msg)
+	case stepParent:
+		return m.updateParent(msg)
 	case stepConfirm:
 		return m.updateConfirm(msg)
 	}
@@ -276,8 +286,9 @@ func (m createModel) updateEstimate(msg tea.Msg) (createModel, tea.Cmd) {
 		switch keyMsg.String() {
 		case "enter":
 			m.estInput.Blur()
-			m.step = stepConfirm
-			return m, nil
+			m.step = stepParent
+			m.parentInput.Focus()
+			return m, m.parentInput.Cursor.BlinkCmd()
 		case "esc":
 			m.estInput.Blur()
 			m.step = stepDescription
@@ -291,6 +302,35 @@ func (m createModel) updateEstimate(msg tea.Msg) (createModel, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.estInput, cmd = m.estInput.Update(msg)
+	return m, cmd
+}
+
+func (m createModel) updateParent(msg tea.Msg) (createModel, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "enter":
+			v := strings.TrimSpace(m.parentInput.Value())
+			if v != "" {
+				if _, err := strconv.Atoi(v); err != nil {
+					return m, nil
+				}
+			}
+			m.parentInput.Blur()
+			m.step = stepConfirm
+			return m, nil
+		case "esc":
+			m.parentInput.Blur()
+			m.step = stepEstimate
+			m.estInput.Focus()
+			return m, m.estInput.Cursor.BlinkCmd()
+		default:
+			var cmd tea.Cmd
+			m.parentInput, cmd = m.parentInput.Update(msg)
+			return m, cmd
+		}
+	}
+	var cmd tea.Cmd
+	m.parentInput, cmd = m.parentInput.Update(msg)
 	return m, cmd
 }
 
@@ -314,6 +354,7 @@ func (m createModel) submitWorkItem() tea.Cmd {
 	desc := m.descInput.Value()
 	estStr := m.estInput.Value()
 	tags := m.selectedTags()
+	parentStr := strings.TrimSpace(m.parentInput.Value())
 
 	return func() tea.Msg {
 		ops := []api.PatchOp{
@@ -349,6 +390,23 @@ func (m createModel) submitWorkItem() tea.Cmd {
 			ops = append(ops, api.PatchOp{Op: "add", Path: "/fields/System.AssignedTo", Value: client.Config().Assignee})
 		}
 
+		if parentStr != "" {
+			parentID, err := strconv.Atoi(parentStr)
+			if err != nil {
+				return errMsg{fmt.Errorf("invalid parent ID: %s", parentStr)}
+			}
+			parentURL := fmt.Sprintf("%s/%s/_apis/wit/workItems/%d",
+				client.BaseURL(), client.Project(), parentID)
+			ops = append(ops, api.PatchOp{
+				Op:   "add",
+				Path: "/relations/-",
+				Value: map[string]string{
+					"rel": "System.LinkTypes.Hierarchy-Reverse",
+					"url": parentURL,
+				},
+			})
+		}
+
 		wi, err := client.CreateWorkItem(wiType, ops)
 		if err != nil {
 			return errMsg{err}
@@ -372,6 +430,7 @@ func (m createModel) view() string {
 		{"Title", m.step > stepTitle},
 		{"Description", m.step > stepDescription},
 		{"Estimate", m.step > stepEstimate},
+		{"Parent", m.step > stepParent},
 		{"Confirm", m.step > stepConfirm},
 	}
 
@@ -474,6 +533,28 @@ func (m createModel) view() string {
 		b.WriteString(" " + m.estInput.View())
 		b.WriteString(helpStyle.Render("\n\n  enter: next (default: 6)  esc: back"))
 
+	case stepParent:
+		fmt.Fprintf(&b, "  Type: %s\n", typeOptions[m.typeIdx])
+		tags := m.selectedTags()
+		if tags == "" {
+			tags = "(none)"
+		}
+		fmt.Fprintf(&b, "  Tags: %s\n", tags)
+		fmt.Fprintf(&b, "  Title: %s\n", m.titleInput.Value())
+		desc := m.descInput.Value()
+		if desc == "" {
+			desc = "(none)"
+		}
+		fmt.Fprintf(&b, "  Description: %s\n", desc)
+		est := m.estInput.Value()
+		if est == "" {
+			est = "6"
+		}
+		fmt.Fprintf(&b, "  Estimate: %s hours\n\n", est)
+		b.WriteString(labelStyle.Render("  Parent ID:"))
+		b.WriteString(" " + m.parentInput.View())
+		b.WriteString(helpStyle.Render("\n\n  enter: next (empty to skip)  esc: back"))
+
 	case stepConfirm:
 		b.WriteString("  Summary:\n\n")
 		fmt.Fprintf(&b, "    Type:        %s\n", typeOptions[m.typeIdx])
@@ -493,6 +574,13 @@ func (m createModel) view() string {
 			est = "6"
 		}
 		fmt.Fprintf(&b, "    Estimate:    %s hours\n", est)
+		parent := strings.TrimSpace(m.parentInput.Value())
+		if parent == "" {
+			parent = "(none)"
+		} else {
+			parent = "#" + parent
+		}
+		fmt.Fprintf(&b, "    Parent:      %s\n", parent)
 		if m.client.Config().Assignee != "" {
 			fmt.Fprintf(&b, "    Assigned To: %s\n", m.client.Config().Assignee)
 		}
