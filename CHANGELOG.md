@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.0.6] - 2026-04-23
+
+### Added
+- `ado model` command: manage LLM profiles (`add`/`ls`/`select`/`rm`/`current`); profiles stored under `~/.ado/models/`
+- Gemini provider support in LLM layer (alongside Claude/OpenAI/Ollama)
+- TUI profile wizard for creating model profiles from settings screen
+- Query TUI: multi-select rows (Space / `a` to toggle all visible) and batch move to iteration (`m`)
+- `ado commits` command — preview the commits that `ado summary` would feed to the LLM
+- LICENSE (GPL-3.0) and project banner image
+
+### Changed
+- `resolveTeam()` helper extracted in `internal/api/query.go`; new `ListIterations()` API
+- Filepicker and settings TUI refinements
+- Removed stale `ADO_TEAM` guidance and `.ado_cache.json` from repo
+
 ## [v0.0.5] - 2026-04-16
 
 ### Added
