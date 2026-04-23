@@ -3,7 +3,8 @@
     "allow": [
       "Bash(go get:*)",
       "Bash(/tmp/ado-build model *)",
-      "Bash(go test *)"
+      "Bash(go test *)",
+      "Bash(/tmp/ado-build commits *)"
     ]
   }
 }

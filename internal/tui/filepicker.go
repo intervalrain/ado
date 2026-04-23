@@ -15,20 +15,23 @@ import (
 type dirEntry struct {
 	name  string
 	isDir bool
+	isGit bool // directory contains a .git entry (file or dir)
 }
 
 type dirPickerModel struct {
-	dir         string // current directory being browsed
-	entries     []dirEntry
-	filtered    []dirEntry // entries after applying filter
-	cursor      int
-	err         error
-	height      int // max visible rows
-	offset      int // scroll offset
-	filter      textinput.Model
-	filtering   bool // true when filter input is focused
-	multiSelect bool              // true for multi-select mode
-	selected    map[string]bool   // selected paths in multi-select mode
+	dir          string // current directory being browsed
+	entries      []dirEntry
+	filtered     []dirEntry // entries after applying filter
+	cursor       int
+	err          error
+	height       int // max visible rows
+	offset       int // scroll offset
+	filter       textinput.Model
+	filtering    bool              // true when filter input is focused
+	multiSelect  bool              // true for multi-select mode
+	selected     map[string]bool   // selected paths in multi-select mode
+	onlyGitRepos bool              // if true, only .git-containing dirs are selectable
+	notice       string            // transient inline message (e.g. rejection)
 }
 
 type dirSelectedMsg struct {
@@ -38,15 +41,18 @@ type dirSelectedMsg struct {
 
 type dirCancelledMsg struct{}
 
-func newDirPicker(startDir string) dirPickerModel {
-	return newDirPickerWithMode(startDir, false)
+// newMultiGitRepoPicker is a multi-select picker that only accepts directories
+// containing a .git entry (file or dir).
+func newMultiGitRepoPicker(startDir string) dirPickerModel {
+	return newDirPickerWithMode(startDir, true, true)
 }
 
-func newMultiDirPicker(startDir string) dirPickerModel {
-	return newDirPickerWithMode(startDir, true)
+// newGitRepoPicker is a single-select picker constrained to git repos.
+func newGitRepoPicker(startDir string) dirPickerModel {
+	return newDirPickerWithMode(startDir, false, true)
 }
 
-func newDirPickerWithMode(startDir string, multiSelect bool) dirPickerModel {
+func newDirPickerWithMode(startDir string, multiSelect, onlyGitRepos bool) dirPickerModel {
 	if startDir == "" {
 		startDir, _ = os.UserHomeDir()
 	}
@@ -59,14 +65,21 @@ func newDirPickerWithMode(startDir string, multiSelect bool) dirPickerModel {
 	fi.Width = 40
 
 	m := dirPickerModel{
-		dir:         startDir,
-		height:      12,
-		filter:      fi,
-		multiSelect: multiSelect,
-		selected:    make(map[string]bool),
+		dir:          startDir,
+		height:       12,
+		filter:       fi,
+		multiSelect:  multiSelect,
+		onlyGitRepos: onlyGitRepos,
+		selected:     make(map[string]bool),
 	}
 	m.loadDir()
 	return m
+}
+
+// isGitRepo reports whether dir contains a .git entry (dir or file).
+func isGitRepo(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 func (m *dirPickerModel) loadDir() {
@@ -96,7 +109,8 @@ func (m *dirPickerModel) loadDir() {
 			continue // skip hidden
 		}
 		if e.IsDir() {
-			dirs = append(dirs, dirEntry{name: e.Name(), isDir: true})
+			full := filepath.Join(m.dir, e.Name())
+			dirs = append(dirs, dirEntry{name: e.Name(), isDir: true, isGit: isGitRepo(full)})
 		}
 	}
 	sort.Slice(dirs, func(i, j int) bool {
@@ -173,7 +187,7 @@ func (m dirPickerModel) Update(msg tea.Msg) (dirPickerModel, tea.Cmd) {
 			return m.handleNav("down")
 		case " ":
 			if m.multiSelect {
-				// Toggle selection of current directory
+				// Toggle selection of current directory or the entry under cursor.
 				path := m.dir
 				if len(m.filtered) > 0 {
 					e := m.filtered[m.cursor]
@@ -181,6 +195,11 @@ func (m dirPickerModel) Update(msg tea.Msg) (dirPickerModel, tea.Cmd) {
 						path = filepath.Join(m.dir, e.name)
 					}
 				}
+				if m.onlyGitRepos && !isGitRepo(path) {
+					m.notice = "✗ not a git repo — only directories containing .git can be selected"
+					return m, nil
+				}
+				m.notice = ""
 				if m.selected[path] {
 					delete(m.selected, path)
 				} else {
@@ -228,7 +247,11 @@ func (m dirPickerModel) Update(msg tea.Msg) (dirPickerModel, tea.Cmd) {
 			}
 		case "tab":
 			if !m.multiSelect {
-				// Select current directory (single-select mode)
+				if m.onlyGitRepos && !isGitRepo(m.dir) {
+					m.notice = "✗ not a git repo — enter a directory containing .git"
+					return m, nil
+				}
+				m.notice = ""
 				return m, func() tea.Msg {
 					return dirSelectedMsg{path: m.dir}
 				}
@@ -255,6 +278,7 @@ func (m dirPickerModel) Update(msg tea.Msg) (dirPickerModel, tea.Cmd) {
 }
 
 func (m dirPickerModel) handleNav(dir string) (dirPickerModel, tea.Cmd) {
+	m.notice = ""
 	switch dir {
 	case "up":
 		if m.cursor > 0 {
@@ -282,6 +306,8 @@ func (m dirPickerModel) View() string {
 	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
 	checkedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	filterLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	gitBadgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	noticeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 
 	header := "  Browse: " + m.dir
 	if m.multiSelect && len(m.selected) > 0 {
@@ -334,17 +360,22 @@ func (m dirPickerModel) View() string {
 		}
 
 		line := "    " + cursor + checkbox + name
+		var rendered string
 		if i == m.cursor {
 			if m.multiSelect && checkbox != "" && m.selected[filepath.Join(m.dir, e.name)] {
-				b.WriteString(checkedStyle.Render(line) + "\n")
+				rendered = checkedStyle.Render(line)
 			} else {
-				b.WriteString(cursorStyle.Render(line) + "\n")
+				rendered = cursorStyle.Render(line)
 			}
 		} else if m.multiSelect && checkbox != "" && m.selected[filepath.Join(m.dir, e.name)] {
-			b.WriteString(checkedStyle.Render(line) + "\n")
+			rendered = checkedStyle.Render(line)
 		} else {
-			b.WriteString(dirStyle.Render(line) + "\n")
+			rendered = dirStyle.Render(line)
 		}
+		if e.isGit && e.name != ".." {
+			rendered += "  " + gitBadgeStyle.Render("git")
+		}
+		b.WriteString(rendered + "\n")
 	}
 
 	// Scroll indicators
@@ -355,10 +386,17 @@ func (m dirPickerModel) View() string {
 		b.WriteString("    " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  ...more below") + "\n")
 	}
 
+	if m.notice != "" {
+		b.WriteString("\n  " + noticeStyle.Render(m.notice))
+	}
+	gitHint := ""
+	if m.onlyGitRepos {
+		gitHint = "  (only git repos)"
+	}
 	if m.multiSelect {
-		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  ←→: open  space: select  enter: submit  type: filter  esc: cancel"))
+		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  ←→: open  space: select  enter: submit  type: filter  esc: cancel" + gitHint))
 	} else {
-		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  ←→/enter: open  tab: select  type: filter  esc: cancel"))
+		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  ←→/enter: open  tab: select  type: filter  esc: cancel" + gitHint))
 	}
 	return b.String()
 }

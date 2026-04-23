@@ -20,9 +20,16 @@ type CommitLog struct {
 }
 
 // CollectLogs runs git log in the given repo directory for the past N days.
+// Uses an ISO date for --since (some git builds mis-parse "N days ago") and
+// --all so commits on any ref (feature branches, remotes) are considered.
 func CollectLogs(repoPath string, days int, author string) ([]CommitLog, error) {
-	since := fmt.Sprintf("--since=%d days ago", days)
-	args := []string{"-C", repoPath, "log", since, "--format=%H|%an|%aI|%s|%b%x00"}
+	cutoff := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	args := []string{
+		"-C", repoPath,
+		"log", "--all",
+		"--since=" + cutoff,
+		"--format=%H|%an|%aI|%s|%b%x00",
+	}
 	if author != "" {
 		args = append(args, "--author="+author)
 	}

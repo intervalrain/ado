@@ -78,7 +78,7 @@ func Execute() error {
 func skipValidate(cmd *cobra.Command) bool {
 	for c := cmd; c != nil; c = c.Parent() {
 		switch c.Name() {
-		case "tui", "model", "models":
+		case "tui", "model", "models", "commits":
 			return true
 		}
 	}

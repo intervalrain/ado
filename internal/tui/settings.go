@@ -457,21 +457,21 @@ func (m settingsModel) updateReposList(msg tea.KeyMsg) (settingsModel, tea.Cmd) 
 		}
 	case "enter":
 		if m.reposCursor == len(m.repos) {
-			// [+ Add] — open multi-select directory browser
+			// [+ Add] — open multi-select directory browser (git repos only)
 			m.reposAdding = true
 			m.browsingDir = true
-			m.dirPicker = newMultiDirPicker("")
+			m.dirPicker = newMultiGitRepoPicker("")
 			return m, nil
 		}
-		// Edit existing — open single-select directory browser
+		// Edit existing — open single-select directory browser (git repos only)
 		m.reposEditing = true
 		m.browsingDir = true
-		m.dirPicker = newDirPicker(m.repos[m.reposCursor])
+		m.dirPicker = newGitRepoPicker(m.repos[m.reposCursor])
 		return m, nil
 	case "a":
 		m.reposAdding = true
 		m.browsingDir = true
-		m.dirPicker = newMultiDirPicker("")
+		m.dirPicker = newMultiGitRepoPicker("")
 		return m, nil
 	case "x", "d":
 		if m.reposCursor < len(m.repos) && len(m.repos) > 0 {
