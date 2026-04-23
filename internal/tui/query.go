@@ -38,6 +38,12 @@ type errMsg struct{ err error }
 type queryResultMsg struct{ refs []api.WorkItemRef }
 type workItemMsg struct{ item *api.WorkItem }
 type fieldSavedMsg struct{ row, col int }
+type iterationsMsg struct{ iters []api.Iteration }
+type moveOneMsg struct {
+	id  int
+	row int
+	err error
+}
 
 // column index → ADO field path (empty = not editable)
 var columnFields = []string{
@@ -68,6 +74,7 @@ const (
 	modeEdit                    // editing a cell value
 	modePick                    // picking from a list (e.g. State)
 	modeFilter                  // typing a '/' filter query
+	modeMove                    // picking an iteration for batch move
 )
 
 type queryModel struct {
@@ -88,6 +95,14 @@ type queryModel struct {
 	filter     string
 	filterIn   textinput.Model
 	visibleIdx []int
+
+	// Batch-move state
+	selected      map[int]bool // keyed by real row index
+	iterations    []api.Iteration
+	iterIdx       int
+	movePending   int // remaining PATCH responses
+	moveErrCount  int
+	moveTargetIdx int // index into iterations for the in-flight move
 
 	termWidth  int
 	termHeight int
@@ -138,6 +153,7 @@ func newQueryModel(client *api.Client, queryID string) queryModel {
 		table:      t,
 		input:      ti,
 		filterIn:   fi,
+		selected:   map[int]bool{},
 		termWidth:  120,
 		termHeight: 24,
 	}
@@ -226,7 +242,40 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		}
 		m.msg = fmt.Sprintf("Saved [%s] for work item %s",
 			m.table.Columns()[msg.col].Title, id)
-		m.mode = modeSelect
+		return m, nil
+	case iterationsMsg:
+		m.iterations = msg.iters
+		if len(m.iterations) == 0 {
+			m.msg = "No iterations found"
+			m.mode = modeBrowse
+			m.table.SetStyles(m.focusedStyles())
+			return m, nil
+		}
+		m.iterIdx = 0
+		m.mode = modeMove
+		m.msg = ""
+		return m, nil
+	case moveOneMsg:
+		m.movePending--
+		if msg.err != nil {
+			m.moveErrCount++
+		}
+		if m.movePending <= 0 {
+			iterName := ""
+			if m.moveTargetIdx < len(m.iterations) {
+				iterName = m.iterations[m.moveTargetIdx].Name
+			}
+			total := len(m.selected)
+			succeeded := total - m.moveErrCount
+			if m.moveErrCount == 0 {
+				m.msg = fmt.Sprintf("Moved %d work item(s) to %s", succeeded, iterName)
+			} else {
+				m.msg = fmt.Sprintf("Moved %d/%d to %s (%d failed)",
+					succeeded, total, iterName, m.moveErrCount)
+			}
+			m.selected = map[int]bool{}
+			m.moveErrCount = 0
+		}
 		return m, nil
 	}
 
@@ -241,6 +290,8 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		return m.updatePick(msg)
 	case modeFilter:
 		return m.updateFilter(msg)
+	case modeMove:
+		return m.updateMove(msg)
 	}
 	return m, nil
 }
@@ -283,6 +334,39 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 			m.filterIn.Focus()
 			m.msg = ""
 			return m, m.filterIn.Cursor.BlinkCmd()
+		case " ":
+			row := m.realRow()
+			if row >= 0 {
+				if m.selected[row] {
+					delete(m.selected, row)
+				} else {
+					m.selected[row] = true
+				}
+			}
+			return m, nil
+		case "a":
+			if len(m.selected) > 0 {
+				m.selected = map[int]bool{}
+				m.msg = "Selection cleared"
+			} else {
+				for _, idx := range m.visibleIdx {
+					m.selected[idx] = true
+				}
+				m.msg = fmt.Sprintf("Selected %d row(s)", len(m.selected))
+			}
+			return m, nil
+		case "m":
+			if len(m.selected) == 0 {
+				if row := m.realRow(); row >= 0 {
+					m.selected[row] = true
+				}
+			}
+			if len(m.selected) == 0 {
+				m.msg = "No row to move"
+				return m, nil
+			}
+			m.msg = fmt.Sprintf("Loading iterations for %d work item(s)...", len(m.selected))
+			return m, m.fetchIterations
 		}
 	}
 	var cmd tea.Cmd
@@ -366,6 +450,7 @@ func (m queryModel) updatePick(msg tea.Msg) (queryModel, tea.Cmd) {
 			m.rows[row][col] = newVal
 			m.applyTableRows()
 			m.resizeColumns()
+			m.mode = modeSelect
 			return m, m.saveField(row, col, newVal)
 		case "esc":
 			m.mode = modeSelect
@@ -409,25 +494,29 @@ func (m queryModel) updateEdit(msg tea.Msg) (queryModel, tea.Cmd) {
 		switch keyMsg.String() {
 		case "enter":
 			m.input.Blur()
-			row := m.realRow()
-			if row < 0 {
-				m.mode = modeSelect
-				return m, nil
-			}
-			col := m.selCol
-			newVal := m.input.Value()
-
-			// Update local row
-			m.rows[row][col] = newVal
-			m.applyTableRows()
-			m.resizeColumns()
-
-			// Save to ADO
-			return m, m.saveField(row, col, newVal)
+			m.mode = modeSelect
+			return m, m.commitEdit()
 		case "esc":
 			m.input.Blur()
 			m.mode = modeSelect
 			return m, nil
+		case "up", "down":
+			saveCmd := m.commitEdit()
+			cur := m.table.Cursor()
+			if keyMsg.String() == "up" && cur > 0 {
+				m.table.SetCursor(cur - 1)
+			} else if keyMsg.String() == "down" && cur < len(m.visibleIdx)-1 {
+				m.table.SetCursor(cur + 1)
+			}
+			newRow := m.realRow()
+			if newRow < 0 {
+				m.input.Blur()
+				m.mode = modeSelect
+				return m, saveCmd
+			}
+			m.input.SetValue(m.rows[newRow][m.selCol])
+			m.input.CursorEnd()
+			return m, tea.Batch(saveCmd, m.input.Cursor.BlinkCmd())
 		default:
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -437,6 +526,24 @@ func (m queryModel) updateEdit(msg tea.Msg) (queryModel, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// commitEdit writes the current input value to the row/field and returns a save cmd.
+// It returns nil if the value is unchanged (no-op).
+func (m *queryModel) commitEdit() tea.Cmd {
+	row := m.realRow()
+	if row < 0 {
+		return nil
+	}
+	col := m.selCol
+	newVal := m.input.Value()
+	if m.rows[row][col] == newVal {
+		return nil
+	}
+	m.rows[row][col] = newVal
+	m.applyTableRows()
+	m.resizeColumns()
+	return m.saveField(row, col, newVal)
 }
 
 func (m queryModel) saveField(row, col int, value string) tea.Cmd {
@@ -463,6 +570,79 @@ func (m queryModel) saveField(row, col int, value string) tea.Cmd {
 			return errMsg{err}
 		}
 		return fieldSavedMsg{row: row, col: col}
+	}
+}
+
+func (m queryModel) fetchIterations() tea.Msg {
+	iters, err := m.client.ListIterations()
+	if err != nil {
+		return errMsg{err}
+	}
+	return iterationsMsg{iters: iters}
+}
+
+func (m queryModel) updateMove(msg tea.Msg) (queryModel, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch keyMsg.String() {
+	case "up", "k":
+		if m.iterIdx > 0 {
+			m.iterIdx--
+		}
+	case "down", "j":
+		if m.iterIdx < len(m.iterations)-1 {
+			m.iterIdx++
+		}
+	case "esc":
+		m.mode = modeBrowse
+		m.msg = ""
+		return m, nil
+	case "enter":
+		return m.startBatchMove()
+	}
+	return m, nil
+}
+
+func (m queryModel) startBatchMove() (queryModel, tea.Cmd) {
+	if m.iterIdx < 0 || m.iterIdx >= len(m.iterations) {
+		return m, nil
+	}
+	target := m.iterations[m.iterIdx]
+	rows := make([]int, 0, len(m.selected))
+	for row := range m.selected {
+		if row >= 0 && row < len(m.rows) {
+			rows = append(rows, row)
+		}
+	}
+	sort.Ints(rows)
+	if len(rows) == 0 {
+		m.mode = modeBrowse
+		return m, nil
+	}
+	m.movePending = len(rows)
+	m.moveErrCount = 0
+	m.moveTargetIdx = m.iterIdx
+	m.mode = modeBrowse
+	m.msg = fmt.Sprintf("Moving %d work item(s) to %s...", len(rows), target.Name)
+	cmds := make([]tea.Cmd, 0, len(rows))
+	for _, row := range rows {
+		id, err := strconv.Atoi(m.rows[row][1])
+		if err != nil {
+			m.movePending--
+			m.moveErrCount++
+			continue
+		}
+		cmds = append(cmds, moveWorkItemIteration(m.client, id, row, target.Path))
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func moveWorkItemIteration(client *api.Client, id, row int, path string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateWorkItemField(id, "System.IterationPath", path)
+		return moveOneMsg{id: id, row: row, err: err}
 	}
 }
 
@@ -579,6 +759,10 @@ func (m queryModel) view() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).
 			Render(fmt.Sprintf("  /%s  (%d/%d)", m.filter, len(m.visibleIdx), len(m.rows))))
 	}
+	if n := len(m.selected); n > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("213")).
+			Render(fmt.Sprintf("  [%d selected]", n)))
+	}
 	b.WriteString("\n")
 
 	b.WriteString(m.renderWithHighlight())
@@ -608,23 +792,38 @@ func (m queryModel) view() string {
 			}
 			b.WriteString("\n")
 		}
+	case modeMove:
+		fmt.Fprintf(&b, "  Move %d work item(s) to iteration:\n", len(m.selected))
+		start, end := visibleRange(len(m.iterations), m.iterIdx, 10)
+		for i := start; i < end; i++ {
+			item := m.iterations[i]
+			if i == m.iterIdx {
+				b.WriteString(selectedStyle.Render("  > " + item.Path))
+			} else {
+				b.WriteString(itemStyle.Render("    " + item.Path))
+			}
+			b.WriteString("\n")
+		}
 	}
 
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  /: filter  d: details  n: new  r: refresh  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  space: mark  a: all/none  m: move  /: filter  d: details  n: new  r: refresh  q: quit\n")
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:
-		b.WriteString("  enter: save  esc: cancel\n")
+		b.WriteString("  enter: save  ↑↓: save & move row  esc: cancel\n")
 	case modePick:
 		b.WriteString("  ↑↓: select  enter: save  esc: cancel\n")
 	case modeFilter:
 		b.WriteString("  type to filter  enter: apply  esc: cancel\n")
+	case modeMove:
+		b.WriteString("  ↑↓: select  enter: apply  esc: cancel\n")
 	}
 	return b.String()
 }
+
 
 func (m queryModel) renderWithHighlight() string {
 	cols := m.table.Columns()
@@ -638,13 +837,17 @@ func (m queryModel) renderWithHighlight() string {
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("62"))
 	headerStyle := lipgloss.NewStyle().Bold(true)
+	selectedMarkStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("213")).
+		Bold(true)
 
 	var b strings.Builder
 
 	colActive := m.mode == modeSelect || m.mode == modeEdit || m.mode == modePick
 	rowActive := colActive || m.mode == modeBrowse || m.mode == modeFilter
 
-	// Header
+	// Header (gutter for selection marker)
+	b.WriteString(headerStyle.Render("   "))
 	for i, col := range cols {
 		cell := util.PadRight(col.Title, col.Width)
 		if colActive && i == m.selCol {
@@ -659,6 +862,7 @@ func (m queryModel) renderWithHighlight() string {
 	b.WriteString("\n")
 
 	// Separator
+	b.WriteString("   ")
 	for i, col := range cols {
 		b.WriteString(strings.Repeat("─", col.Width))
 		if i < len(cols)-1 {
@@ -671,6 +875,14 @@ func (m queryModel) renderWithHighlight() string {
 	for ri, idx := range m.visibleIdx {
 		row := m.rows[idx]
 		rowStyle := stateStyle(row[3])
+
+		// Selection-marker gutter
+		if m.selected[idx] {
+			b.WriteString(selectedMarkStyle.Render(" ● "))
+		} else {
+			b.WriteString("   ")
+		}
+
 		for ci, col := range cols {
 			val := ""
 			if ci < len(row) {

@@ -85,24 +85,31 @@ type teamResult struct {
 	} `json:"value"`
 }
 
+// resolveTeam returns the configured team or the first team of the project.
+func (c *Client) resolveTeam() (string, error) {
+	if c.cfg.Team != "" {
+		return c.cfg.Team, nil
+	}
+	teamURL := fmt.Sprintf(
+		"%s/_apis/projects/%s/teams?$top=1&api-version=7.1",
+		c.BaseURL(), c.Project(),
+	)
+	var tr teamResult
+	if err := c.get(teamURL, &tr); err != nil {
+		return "", fmt.Errorf("failed to list teams: %w", err)
+	}
+	if len(tr.Value) == 0 {
+		return "", fmt.Errorf("no teams found in project")
+	}
+	return tr.Value[0].Name, nil
+}
+
 // GetCurrentIteration returns the current sprint iteration path.
 // Uses ADO_TEAM if set, otherwise fetches the default team from the project.
 func (c *Client) GetCurrentIteration() (string, error) {
-	team := c.cfg.Team
-	if team == "" {
-		// Auto-discover: list project teams and use the first one (default team)
-		teamURL := fmt.Sprintf(
-			"%s/_apis/projects/%s/teams?$top=1&api-version=7.1",
-			c.BaseURL(), c.Project(),
-		)
-		var tr teamResult
-		if err := c.get(teamURL, &tr); err != nil {
-			return "", fmt.Errorf("failed to list teams: %w", err)
-		}
-		if len(tr.Value) == 0 {
-			return "", fmt.Errorf("no teams found in project")
-		}
-		team = tr.Value[0].Name
+	team, err := c.resolveTeam()
+	if err != nil {
+		return "", err
 	}
 	url := fmt.Sprintf(
 		"%s/%s/%s/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.1",
@@ -116,6 +123,23 @@ func (c *Client) GetCurrentIteration() (string, error) {
 		return "", fmt.Errorf("no current iteration found")
 	}
 	return result.Value[0].Path, nil
+}
+
+// ListIterations returns all iterations visible to the team, ordered as ADO returns them.
+func (c *Client) ListIterations() ([]Iteration, error) {
+	team, err := c.resolveTeam()
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf(
+		"%s/%s/%s/_apis/work/teamsettings/iterations?api-version=7.1",
+		c.BaseURL(), c.Project(), team,
+	)
+	var result iterationsResult
+	if err := c.get(url, &result); err != nil {
+		return nil, err
+	}
+	return result.Value, nil
 }
 
 func (c *Client) GetWorkItem(id int) (*WorkItem, error) {
