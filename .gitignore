@@ -1,3 +1,5 @@
 .env
 ado
 dist/
+.claude
+.ado_cache.json

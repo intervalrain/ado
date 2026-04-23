@@ -30,8 +30,9 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		// TUI can start without org/pat so users can configure via Settings
-		if cmd.Name() != "tui" {
+		// TUI and model management can start without org/pat — TUI has its
+		// own Settings screen; `ado model ...` only touches profile files.
+		if !skipValidate(cmd) {
 			if err := cfg.Validate(); err != nil {
 				return err
 			}
@@ -70,4 +71,16 @@ var rootCmd = &cobra.Command{
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// skipValidate returns true for commands that don't need ADO credentials
+// (TUI has an in-app Settings screen; `ado model ...` only edits profiles).
+func skipValidate(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "tui", "model", "models":
+			return true
+		}
+	}
+	return false
 }

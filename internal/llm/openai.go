@@ -12,11 +12,12 @@ import (
 const defaultOpenAIURL = "https://api.openai.com/v1/chat/completions"
 
 type openaiClient struct {
-	apiKey    string
-	model     string
-	baseURL   string
-	maxTokens int
-	http      *http.Client
+	apiKey       string
+	model        string
+	baseURL      string
+	maxTokens    int
+	useMaxComp   bool // true → send max_completion_tokens (openai newer models)
+	http         *http.Client
 }
 
 func newOpenAIClient(cfg Config) *openaiClient {
@@ -25,18 +26,20 @@ func newOpenAIClient(cfg Config) *openaiClient {
 		base = defaultOpenAIURL
 	}
 	return &openaiClient{
-		apiKey:    cfg.APIKey,
-		model:     cfg.Model,
-		baseURL:   base,
-		maxTokens: cfg.MaxTokens,
-		http:      &http.Client{},
+		apiKey:     cfg.APIKey,
+		model:      cfg.Model,
+		baseURL:    base,
+		maxTokens:  cfg.MaxTokens,
+		useMaxComp: cfg.Provider == "openai",
+		http:       &http.Client{},
 	}
 }
 
 type openaiRequest struct {
-	Model     string      `json:"model"`
-	Messages  []openaiMsg `json:"messages"`
-	MaxTokens int         `json:"max_tokens,omitempty"`
+	Model               string      `json:"model"`
+	Messages            []openaiMsg `json:"messages"`
+	MaxTokens           int         `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int         `json:"max_completion_tokens,omitempty"`
 }
 
 type openaiMsg struct {
@@ -67,9 +70,13 @@ func (c *openaiClient) Complete(ctx context.Context, system string, messages []M
 	}
 
 	body := openaiRequest{
-		Model:     c.model,
-		Messages:  msgs,
-		MaxTokens: c.maxTokens,
+		Model:    c.model,
+		Messages: msgs,
+	}
+	if c.useMaxComp {
+		body.MaxCompletionTokens = c.maxTokens
+	} else {
+		body.MaxTokens = c.maxTokens
 	}
 
 	data, err := json.Marshal(body)

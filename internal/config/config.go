@@ -17,7 +17,6 @@ type Config struct {
 	PAT      string `yaml:"pat"`
 	QueryID  string `yaml:"query_id"`
 	Assignee string `yaml:"assignee"`
-	Team     string `yaml:"team"`
 
 	Summary SummarySection `yaml:"summary"`
 	LLM     LLMSection     `yaml:"llm"`
@@ -92,13 +91,21 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Overlay the active model profile (if any) onto the inline llm: section.
+	// The inline section acts as the default; a selected profile overrides it
+	// so users can switch providers/models without rewriting config.yaml.
+	if name := CurrentModel(); name != "" {
+		if p, err := LoadModelProfile(name); err == nil {
+			applyProfile(&cfg.LLM, p)
+		}
+	}
+
 	// Env var overrides (backward compat with .env / shell exports)
 	envOverride(&cfg.Org, "ADO_ORG")
 	envOverride(&cfg.Project, "ADO_PROJECT")
 	envOverride(&cfg.PAT, "ADO_PAT")
 	envOverride(&cfg.QueryID, "ADO_QUERY_ID")
 	envOverride(&cfg.Assignee, "ADO_ASSIGNEE")
-	envOverride(&cfg.Team, "ADO_TEAM")
 
 	// Note: org/pat validation moved to individual commands.
 	// TUI settings screen needs to load even when unconfigured.
@@ -149,6 +156,28 @@ func Save(cfg *Config) error {
 	}
 
 	return os.WriteFile(ConfigPath(), data, 0644)
+}
+
+// applyProfile overlays non-empty fields from a ModelProfile onto an LLMSection.
+func applyProfile(l *LLMSection, p *ModelProfile) {
+	if p.Provider != "" {
+		l.Provider = p.Provider
+	}
+	if p.Model != "" {
+		l.Model = p.Model
+	}
+	if p.APIKey != "" {
+		l.APIKey = p.APIKey
+	}
+	if p.APIKeyEnv != "" {
+		l.APIKeyEnv = p.APIKeyEnv
+	}
+	if p.BaseURL != "" {
+		l.BaseURL = p.BaseURL
+	}
+	if p.MaxTokens != 0 {
+		l.MaxTokens = p.MaxTokens
+	}
 }
 
 func envOverride(field *string, key string) {

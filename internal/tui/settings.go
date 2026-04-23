@@ -20,13 +20,25 @@ type settingsField struct {
 	input   textinput.Model
 }
 
+type settingsTab struct {
+	label   string
+	section string
+}
+
+var settingsTabs = []settingsTab{
+	{"ADO", "ado"},
+	{"Summary", "summary"},
+	{"LLM", "llm"},
+}
+
 type settingsModel struct {
-	fields  []settingsField
-	cursor  int
-	editing bool
-	saved   bool
-	err     error
-	cfg     *config.Config
+	fields    []settingsField
+	cursor    int
+	activeTab int
+	editing   bool
+	saved     bool
+	err       error
+	cfg       *config.Config
 
 	// Repos list sub-editor
 	repos        []string
@@ -34,6 +46,17 @@ type settingsModel struct {
 	reposEditing bool
 	reposAdding  bool
 	inReposList  bool // true when navigating inside the repos sub-list
+
+	// Model profile switcher
+	profiles        []string
+	profilesCursor  int
+	inProfilesList  bool
+	currentProfile  string
+	profileSwitched bool
+	pendingDelete   string // profile name awaiting a second press to confirm
+
+	// Active wizard (add/edit); nil when not open.
+	wizard *profileWizard
 
 	// Directory browser
 	dirPicker   dirPickerModel
@@ -52,7 +75,6 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		{"PAT", "pat", cfg.PAT},
 		{"Query ID", "query_id", cfg.QueryID},
 		{"Assignee", "assignee", cfg.Assignee},
-		{"Team", "team", cfg.Team},
 	}
 	for _, k := range adoKeys {
 		ti := textinput.New()
@@ -89,14 +111,14 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		})
 	}
 
-	// LLM settings
+	// LLM settings — "Profile" is a sub-list (like repos); the rest are text inputs
 	llmKeys := []struct {
 		label, key, value string
 	}{
+		{"Profile", "llm.profile", ""}, // rendered as sub-list
 		{"Provider", "llm.provider", cfg.LLM.Provider},
 		{"Model", "llm.model", cfg.LLM.Model},
 		{"API Key", "llm.api_key", cfg.LLM.APIKey},
-		{"API Key Env", "llm.api_key_env", cfg.LLM.APIKeyEnv},
 		{"Base URL", "llm.base_url", cfg.LLM.BaseURL},
 		{"Max Tokens", "llm.max_tokens", strconv.Itoa(cfg.LLM.MaxTokens)},
 	}
@@ -116,14 +138,71 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 	repos := make([]string, len(cfg.Summary.Repos))
 	copy(repos, cfg.Summary.Repos)
 
-	return settingsModel{
-		fields: fields,
-		cfg:    cfg,
-		repos:  repos,
+	m := settingsModel{
+		fields:         fields,
+		cfg:            cfg,
+		repos:          repos,
+		profiles:       config.ListModelProfiles(),
+		currentProfile: config.CurrentModel(),
 	}
+	m.cursor = m.firstFieldOfTab(0)
+	return m
+}
+
+// firstFieldOfTab returns the index of the first field in the given tab,
+// or 0 if no field matches (defensive, shouldn't happen in practice).
+func (m settingsModel) firstFieldOfTab(tabIdx int) int {
+	section := settingsTabs[tabIdx].section
+	for i, f := range m.fields {
+		if f.section == section {
+			return i
+		}
+	}
+	return 0
+}
+
+// lastFieldOfTab returns the index of the last field in the given tab.
+func (m settingsModel) lastFieldOfTab(tabIdx int) int {
+	section := settingsTabs[tabIdx].section
+	last := 0
+	for i, f := range m.fields {
+		if f.section == section {
+			last = i
+		}
+	}
+	return last
 }
 
 func (m settingsModel) update(msg tea.Msg) (settingsModel, tea.Cmd) {
+	// Wizard consumes all events while open, except completion messages below.
+	if m.wizard != nil {
+		if done, ok := msg.(profileWizardDoneMsg); ok {
+			m.wizard = nil
+			m.profiles = config.ListModelProfiles()
+			switch done.action {
+			case "added", "updated":
+				if done.current {
+					_ = config.SetCurrentModel(done.name)
+					m.currentProfile = done.name
+					m.profileSwitched = true
+					if p, err := config.LoadModelProfile(done.name); err == nil {
+						m.syncLLMFields(p)
+					}
+				}
+				// Cursor to newly saved profile.
+				for i, n := range m.profiles {
+					if n == done.name {
+						m.profilesCursor = i
+						break
+					}
+				}
+			}
+			return m, nil
+		}
+		w, cmd := m.wizard.update(msg)
+		m.wizard = &w
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case settingsSavedMsg:
 		m.saved = true
@@ -168,6 +247,9 @@ func (m settingsModel) update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.inReposList {
 			return m.updateReposList(msg)
 		}
+		if m.inProfilesList {
+			return m.updateProfilesList(msg)
+		}
 		if m.editing {
 			return m.updateEditing(msg)
 		}
@@ -183,15 +265,26 @@ func (m settingsModel) update(msg tea.Msg) (settingsModel, tea.Cmd) {
 }
 
 func (m settingsModel) updateBrowsing(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
+	first := m.firstFieldOfTab(m.activeTab)
+	last := m.lastFieldOfTab(m.activeTab)
 	switch msg.String() {
+	case "tab", "shift+tab", "right", "left":
+		m.saved = false
+		delta := 1
+		if s := msg.String(); s == "shift+tab" || s == "left" {
+			delta = -1
+		}
+		m.activeTab = (m.activeTab + delta + len(settingsTabs)) % len(settingsTabs)
+		m.cursor = m.firstFieldOfTab(m.activeTab)
+		return m, nil
 	case "up", "k":
 		m.saved = false
-		if m.cursor > 0 {
+		if m.cursor > first {
 			m.cursor--
 		}
 	case "down", "j":
 		m.saved = false
-		if m.cursor < len(m.fields)-1 {
+		if m.cursor < last {
 			m.cursor++
 		}
 	case "enter":
@@ -201,11 +294,136 @@ func (m settingsModel) updateBrowsing(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 			m.reposCursor = 0
 			return m, nil
 		}
+		if m.fields[m.cursor].key == "llm.profile" {
+			m.inProfilesList = true
+			m.profiles = config.ListModelProfiles()
+			m.currentProfile = config.CurrentModel()
+			m.profilesCursor = 0
+			for i, n := range m.profiles {
+				if n == m.currentProfile {
+					m.profilesCursor = i
+					break
+				}
+			}
+			return m, nil
+		}
 		m.editing = true
 		m.fields[m.cursor].input.Focus()
 		return m, m.fields[m.cursor].input.Cursor.BlinkCmd()
 	}
 	return m, nil
+}
+
+func (m settingsModel) updateProfilesList(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
+	key := msg.String()
+
+	// Any key except the repeat-press clears a pending delete.
+	if m.pendingDelete != "" && key != "x" && key != "d" {
+		m.pendingDelete = ""
+	}
+
+	maxIdx := len(m.profiles) - 1
+	if maxIdx < 0 {
+		// Empty list: allow `a` to add, `esc` to close.
+		switch key {
+		case "a":
+			w := newProfileWizard(pwModeAdd, nil)
+			m.wizard = &w
+			return m, w.name.Cursor.BlinkCmd()
+		case "esc":
+			m.inProfilesList = false
+		}
+		return m, nil
+	}
+	switch key {
+	case "up", "k":
+		if m.profilesCursor > 0 {
+			m.profilesCursor--
+		}
+	case "down", "j":
+		if m.profilesCursor < maxIdx {
+			m.profilesCursor++
+		}
+	case "enter":
+		name := m.profiles[m.profilesCursor]
+		p, err := config.LoadModelProfile(name)
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		if err := config.SetCurrentModel(name); err != nil {
+			m.err = err
+			return m, nil
+		}
+		m.currentProfile = name
+		m.profileSwitched = true
+		m.syncLLMFields(p)
+		m.inProfilesList = false
+	case "a":
+		w := newProfileWizard(pwModeAdd, nil)
+		m.wizard = &w
+		return m, w.name.Cursor.BlinkCmd()
+	case "e":
+		name := m.profiles[m.profilesCursor]
+		p, err := config.LoadModelProfile(name)
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		w := newProfileWizard(pwModeEdit, p)
+		m.wizard = &w
+		return m, w.name.Cursor.BlinkCmd()
+	case "x", "d":
+		name := m.profiles[m.profilesCursor]
+		if m.pendingDelete != name {
+			m.pendingDelete = name
+			return m, nil
+		}
+		// Second press confirms.
+		if err := config.RemoveModelProfile(name); err != nil {
+			m.err = err
+			m.pendingDelete = ""
+			return m, nil
+		}
+		if m.currentProfile == name {
+			_ = config.SetCurrentModel("")
+			m.currentProfile = ""
+		}
+		m.pendingDelete = ""
+		m.profiles = config.ListModelProfiles()
+		if m.profilesCursor >= len(m.profiles) && m.profilesCursor > 0 {
+			m.profilesCursor--
+		}
+	case "esc":
+		m.inProfilesList = false
+	}
+	return m, nil
+}
+
+// syncLLMFields mirrors a profile's values into the llm.* text inputs so the
+// UI reflects what Load() will see next launch.
+func (m *settingsModel) syncLLMFields(p *config.ModelProfile) {
+	for i := range m.fields {
+		switch m.fields[i].key {
+		case "llm.provider":
+			m.fields[i].input.SetValue(p.Provider)
+			m.cfg.LLM.Provider = p.Provider
+		case "llm.model":
+			m.fields[i].input.SetValue(p.Model)
+			m.cfg.LLM.Model = p.Model
+		case "llm.api_key":
+			m.fields[i].input.SetValue(p.APIKey)
+			m.cfg.LLM.APIKey = p.APIKey
+		case "llm.base_url":
+			m.fields[i].input.SetValue(p.BaseURL)
+			m.cfg.LLM.BaseURL = p.BaseURL
+		case "llm.max_tokens":
+			if p.MaxTokens > 0 {
+				m.fields[i].input.SetValue(strconv.Itoa(p.MaxTokens))
+				m.cfg.LLM.MaxTokens = p.MaxTokens
+			}
+		}
+	}
 }
 
 func (m settingsModel) updateEditing(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
@@ -299,8 +517,6 @@ func (m settingsModel) save() tea.Cmd {
 				cfg.QueryID = val
 			case "assignee":
 				cfg.Assignee = val
-			case "team":
-				cfg.Team = val
 			// Summary
 			case "summary.days":
 				if n, err := strconv.Atoi(val); err == nil {
@@ -308,6 +524,8 @@ func (m settingsModel) save() tea.Cmd {
 				}
 			case "summary.repos":
 				// handled by saveRepos(), skip here
+			case "llm.profile":
+				// handled by updateProfilesList(), skip here
 			case "summary.template":
 				cfg.Summary.Template = val
 			case "summary.author":
@@ -319,8 +537,6 @@ func (m settingsModel) save() tea.Cmd {
 				cfg.LLM.Model = val
 			case "llm.api_key":
 				cfg.LLM.APIKey = val
-			case "llm.api_key_env":
-				cfg.LLM.APIKeyEnv = val
 			case "llm.base_url":
 				cfg.LLM.BaseURL = val
 			case "llm.max_tokens":
@@ -338,6 +554,9 @@ func (m settingsModel) save() tea.Cmd {
 }
 
 func (m settingsModel) view() string {
+	if m.wizard != nil {
+		return m.wizard.view()
+	}
 	if m.browsingDir {
 		return m.dirPicker.View()
 	}
@@ -345,36 +564,81 @@ func (m settingsModel) view() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Settings"))
+	b.WriteString("\n")
+	b.WriteString(m.renderTabBar())
 	b.WriteString("\n\n")
 
+	// Only consider visible fields for layout.
+	activeSection := settingsTabs[m.activeTab].section
 	labelWidth := 0
 	for _, f := range m.fields {
+		if f.section != activeSection {
+			continue
+		}
 		if len(f.label) > labelWidth {
 			labelWidth = len(f.label)
 		}
 	}
 
-	sectionHeader := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	prevSection := ""
-
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 
 	for i, f := range m.fields {
-		if f.section != prevSection {
-			if prevSection != "" {
-				b.WriteString("\n")
+		if f.section != activeSection {
+			continue
+		}
+
+		// Special rendering for model profile switcher
+		if f.key == "llm.profile" {
+			label := fmt.Sprintf("%-*s", labelWidth, f.label)
+			cursor := "  "
+			if i == m.cursor && !m.inReposList && !m.inProfilesList {
+				cursor = "> "
 			}
-			switch f.section {
-			case "ado":
-				b.WriteString(sectionHeader.Render("  ADO Connection"))
-			case "summary":
-				b.WriteString(sectionHeader.Render("  Summary"))
-			case "llm":
-				b.WriteString(sectionHeader.Render("  LLM"))
+			style := lipgloss.NewStyle()
+			if i == m.cursor && !m.inReposList && !m.inProfilesList {
+				style = style.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
 			}
+			summary := "(inline)"
+			if m.currentProfile != "" {
+				summary = m.currentProfile
+				if p, err := config.LoadModelProfile(m.currentProfile); err == nil {
+					summary = fmt.Sprintf("%s · %s / %s", m.currentProfile, p.Provider, p.Model)
+				}
+			}
+			b.WriteString(style.Render(fmt.Sprintf("%s%s : %s", cursor, label, summary)))
 			b.WriteString("\n")
-			prevSection = f.section
+
+			if m.inProfilesList {
+				pad := strings.Repeat(" ", labelWidth+5)
+				if len(m.profiles) == 0 {
+					b.WriteString(pad + dimStyle.Render("  (no profiles — press a to add)") + "\n")
+				}
+				warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+				for j, n := range m.profiles {
+					rc := "  "
+					if j == m.profilesCursor {
+						rc = "> "
+					}
+					rs := lipgloss.NewStyle()
+					if j == m.profilesCursor {
+						rs = rs.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
+					}
+					marker := "  "
+					if n == m.currentProfile {
+						marker = "* "
+					}
+					line := rc + marker + n
+					if p, err := config.LoadModelProfile(n); err == nil {
+						line += dimStyle.Render(fmt.Sprintf("  (%s / %s)", p.Provider, p.Model))
+					}
+					if n == m.pendingDelete {
+						line += "  " + warnStyle.Render("press x again to delete")
+					}
+					b.WriteString(pad + rs.Render(line) + "\n")
+				}
+			}
+			continue
 		}
 
 		// Special rendering for repos list
@@ -459,10 +723,33 @@ func (m settingsModel) view() string {
 
 	if m.inReposList {
 		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  enter: browse  a: add  x: delete  esc: back"))
+	} else if m.inProfilesList {
+		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  enter: activate  a: add  e: edit  x: delete (2×)  esc: back"))
 	} else {
-		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  enter: edit  esc: back"))
+		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  ←→/tab: switch tab  enter: edit  esc: back"))
 	}
 	return b.String()
+}
+
+func (m settingsModel) renderTabBar() string {
+	active := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(true).
+		Padding(0, 2)
+	idle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Padding(0, 2)
+
+	var parts []string
+	for i, t := range settingsTabs {
+		if i == m.activeTab {
+			parts = append(parts, active.Render(t.label))
+		} else {
+			parts = append(parts, idle.Render(t.label))
+		}
+	}
+	return "  " + strings.Join(parts, " ")
 }
 
 func maskPAT(pat string) string {

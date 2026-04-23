@@ -16,9 +16,44 @@ var (
 	itemStyle     = lipgloss.NewStyle().PaddingLeft(2)
 	selectedStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
 	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginTop(1)
+
+	// Homepage-only styles — Catppuccin Mocha palette, aurora gradient logo.
+	logoGradient = []string{"#a6e3a1", "#94e2d5", "#89dceb", "#89b4fa", "#b4befe", "#cba6f7"}
+	logoLines    = []string{
+		" █████╗ ██████╗  ██████╗ ",
+		"██╔══██╗██╔══██╗██╔═══██╗",
+		"███████║██║  ██║██║   ██║",
+		"██╔══██║██║  ██║██║   ██║",
+		"██║  ██║██████╔╝╚██████╔╝",
+		"╚═╝  ╚═╝╚═════╝  ╚═════╝ ",
+	}
+
+	homeBox = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#89b4fa")).
+			Padding(1, 4)
+	homeSubtitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#bac2de")).Italic(true)
+	homeStatusLabel   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7f849c"))
+	homeStatusValue   = lipgloss.NewStyle().Foreground(lipgloss.Color("#94e2d5")).Bold(true)
+	homeStatusDim     = lipgloss.NewStyle().Foreground(lipgloss.Color("#f38ba8")).Italic(true)
+	homeDot           = lipgloss.NewStyle().Foreground(lipgloss.Color("#a6e3a1")).Bold(true)
+
+	homeIconStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#89dceb")).Bold(true)
+	homeLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4")).Bold(true)
+	homeDescStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7f849c"))
+
+	homeSelectedIcon  = lipgloss.NewStyle().Foreground(lipgloss.Color("#fab387")).Bold(true)
+	homeSelectedLabel = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true)
+	homeSelectedDesc  = lipgloss.NewStyle().Foreground(lipgloss.Color("#cdd6f4"))
+	homeCursor        = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true)
+
+	homeHelpKey = lipgloss.NewStyle().Foreground(lipgloss.Color("#89b4fa")).Bold(true)
+	homeHelpSep = lipgloss.NewStyle().Foreground(lipgloss.Color("#45475a"))
+	homeHelpTxt = lipgloss.NewStyle().Foreground(lipgloss.Color("#7f849c"))
 )
 
 type menuItem struct {
+	icon  string
 	label string
 	desc  string
 }
@@ -60,12 +95,12 @@ func NewModel(client *api.Client, queryID string, llmClient llm.Client, sumCfg *
 		sumCfg:    sumCfg,
 		screen:    screenMenu,
 		items: []menuItem{
-			{label: "Query", desc: "Run a saved query and browse work items"},
-			{label: "New", desc: "Create a new work item"},
-			{label: "Pull Requests", desc: "Browse pull requests by repository"},
-			{label: "Pipelines", desc: "Browse pipeline definitions and builds"},
-			{label: "Summary", desc: "Generate weekly summary report"},
-			{label: "Settings", desc: "View current configuration"},
+			{icon: "◆", label: "Query", desc: "Run a saved query and browse work items"},
+			{icon: "✚", label: "New", desc: "Create a new work item"},
+			{icon: "⇄", label: "Pull Requests", desc: "Browse pull requests by repository"},
+			{icon: "▶", label: "Pipelines", desc: "Browse pipeline definitions and builds"},
+			{icon: "≡", label: "Summary", desc: "Generate weekly summary report"},
+			{icon: "⚙", label: "Settings", desc: "View current configuration"},
 		},
 	}
 }
@@ -233,14 +268,26 @@ func (m Model) updateSummary(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Only allow esc to go back when not editing a field
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && !m.settingsMdl.editing {
-		switch keyMsg.String() {
-		case "esc":
-			m.screen = screenMenu
-			return m, nil
-		case "q", "ctrl+c":
+	// Only bubble esc up to the main menu when the settings screen has no
+	// sub-modal active; otherwise let the settings model handle it.
+	inSub := m.settingsMdl.editing ||
+		m.settingsMdl.inReposList ||
+		m.settingsMdl.inProfilesList ||
+		m.settingsMdl.browsingDir ||
+		m.settingsMdl.wizard != nil
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		// ctrl+c always quits, no matter the sub-mode.
+		if keyMsg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if !inSub {
+			switch keyMsg.String() {
+			case "esc":
+				m.screen = screenMenu
+				return m, nil
+			case "q":
+				return m, tea.Quit
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -270,20 +317,78 @@ func (m Model) View() string {
 func (m Model) viewMenu() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Azure DevOps CLI"))
-	b.WriteString("\n")
+	// Gradient ASCII logo.
+	logo := make([]string, len(logoLines))
+	for i, line := range logoLines {
+		color := logoGradient[i%len(logoGradient)]
+		logo[i] = lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true).Render(line)
+	}
+
+	subtitle := homeSubtitleStyle.Render("— Azure DevOps CLI —")
+
+	// Status line: org / project, or a hint to configure.
+	var status string
+	if m.sumCfg != nil && m.sumCfg.Org != "" {
+		org := strings.TrimPrefix(m.sumCfg.Org, "https://")
+		org = strings.TrimPrefix(org, "http://")
+		org = strings.TrimPrefix(org, "dev.azure.com/")
+		org = strings.TrimSuffix(org, "/")
+		target := org
+		if m.sumCfg.Project != "" {
+			target = org + " / " + m.sumCfg.Project
+		}
+		status = homeDot.Render("● ") + homeStatusLabel.Render("connected ") + homeStatusValue.Render(target)
+	} else {
+		status = homeStatusDim.Render("○ no config — run ado config init")
+	}
+
+	header := lipgloss.JoinVertical(lipgloss.Center,
+		lipgloss.JoinVertical(lipgloss.Left, logo...),
+		"",
+		subtitle,
+		status,
+	)
+	b.WriteString(homeBox.Render(header))
+	b.WriteString("\n\n")
+
+	// Compute label width so descriptions align.
+	labelWidth := 0
+	for _, it := range m.items {
+		if w := lipgloss.Width(it.label); w > labelWidth {
+			labelWidth = w
+		}
+	}
 
 	for i, item := range m.items {
-		label := fmt.Sprintf("%s  %s", item.label, lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(item.desc))
+		padLabel := item.label + strings.Repeat(" ", labelWidth-lipgloss.Width(item.label))
 		if i == m.cursor {
-			b.WriteString(selectedStyle.Render("> " + label))
+			b.WriteString("  ")
+			b.WriteString(homeCursor.Render("▸ "))
+			b.WriteString(homeSelectedIcon.Render(item.icon))
+			b.WriteString("  ")
+			b.WriteString(homeSelectedLabel.Render(padLabel))
+			b.WriteString("   ")
+			b.WriteString(homeSelectedDesc.Render(item.desc))
 		} else {
-			b.WriteString(itemStyle.Render("  " + label))
+			b.WriteString("    ")
+			b.WriteString(homeIconStyle.Render(item.icon))
+			b.WriteString("  ")
+			b.WriteString(homeLabelStyle.Render(padLabel))
+			b.WriteString("   ")
+			b.WriteString(homeDescStyle.Render(item.desc))
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString(helpStyle.Render("  ↑↓/jk: navigate  enter: select  q: quit"))
+	// Stylized help footer.
+	sep := homeHelpSep.Render(" · ")
+	help := fmt.Sprintf("  %s %s%s%s %s%s%s %s",
+		homeHelpKey.Render("↑↓/jk"), homeHelpTxt.Render("navigate"), sep,
+		homeHelpKey.Render("enter"), homeHelpTxt.Render("select"), sep,
+		homeHelpKey.Render("q"), homeHelpTxt.Render("quit"),
+	)
+	b.WriteString("\n")
+	b.WriteString(help)
 	return b.String()
 }
 

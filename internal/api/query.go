@@ -85,11 +85,8 @@ type teamResult struct {
 	} `json:"value"`
 }
 
-// resolveTeam returns the configured team or the first team of the project.
+// resolveTeam returns the first team of the project.
 func (c *Client) resolveTeam() (string, error) {
-	if c.cfg.Team != "" {
-		return c.cfg.Team, nil
-	}
 	teamURL := fmt.Sprintf(
 		"%s/_apis/projects/%s/teams?$top=1&api-version=7.1",
 		c.BaseURL(), c.Project(),
@@ -104,8 +101,8 @@ func (c *Client) resolveTeam() (string, error) {
 	return tr.Value[0].Name, nil
 }
 
-// GetCurrentIteration returns the current sprint iteration path.
-// Uses ADO_TEAM if set, otherwise fetches the default team from the project.
+// GetCurrentIteration returns the current sprint iteration path, using the
+// first team of the project.
 func (c *Client) GetCurrentIteration() (string, error) {
 	team, err := c.resolveTeam()
 	if err != nil {

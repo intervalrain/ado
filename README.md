@@ -4,6 +4,17 @@
 
 ---
 
+![ADO](resources/ado.png)
+
+## License
+
+> Copyright (C) 2026 Rain Hu
+> This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3.
+
+---
+
 ## 繁體中文
 
 輕量級 Azure DevOps CLI 工具，提供 CLI 指令與互動式 TUI 介面，採用 CQRS + MediatR 模式設計。
@@ -57,7 +68,6 @@ ADO_PROJECT=your-project
 ADO_PAT=your-personal-access-token
 ADO_QUERY_ID=your-saved-query-id
 ADO_ASSIGNEE=your-display-name       # 選填，新建工作項目時的預設指派人
-ADO_TEAM=your-team-name              # 選填，用於自動指派 iteration
 ```
 
 > 可透過 `ADO_ENV` 環境變數指定 `.env` 路徑，方便切換不同組織設定。
@@ -122,6 +132,39 @@ ado pr "修復 #123" -d "修正問題描述" --auto-complete
 | `-r, --reviewer` | 必要審查者（名稱或 email） | |
 | `-o, --optional` | 選擇性審查者 | |
 | `--auto-complete` | 啟用自動完成（squash merge + 刪除來源分支） | false |
+
+#### `ado model` — 管理 LLM 模型設定檔
+
+把 provider / model / API key 等設定存成獨立的 profile，隨時切換，不必每次改 `~/.ado/config.yaml`。Profile 存放於 `~/.ado/models/<name>.yaml`，當前啟用的名稱寫在 `~/.ado/models/current.txt`。
+
+```bash
+# 新增 profile（claude / openai / gemini 需要 --api-key）
+ado model add sonnet claude claude-sonnet-4-20250514 \
+  --api-key sk-ant-... -d "Anthropic default"
+
+ado model add gpt4 openai gpt-4o-mini --api-key sk-...
+
+ado model add gemini-flash gemini gemini-2.5-flash --api-key ...
+
+# ollama 只需要 --base-url（預設 http://localhost:11434）
+ado model add local ollama llama3.2 --base-url http://localhost:11434
+
+# 列出 / 切換 / 移除
+ado model ls
+ado model select gpt4
+ado model current
+ado model rm sonnet
+```
+
+| 子命令 | 說明 |
+|--------|------|
+| `add <name> <provider> <model>` | 新增 profile（provider：`claude` / `openai` / `gemini` / `ollama`） |
+| `ls` | 列出全部 profile，`*` 標記啟用中的 |
+| `select <name>` | 切換啟用 profile |
+| `current` | 顯示目前啟用的 profile |
+| `rm <name>` | 刪除 profile |
+
+啟用中的 profile 會覆寫 `~/.ado/config.yaml` 的 `llm:` 區塊；TUI Settings 的 LLM 區也多了「Profile」項目可直接切換。
 
 #### `ado tui` — 啟動互動式介面
 
@@ -199,7 +242,7 @@ ado tui -i <query-id>
 
 #### Settings 畫面
 
-直接在 TUI 中編輯 `.env` 設定值（Org、Project、PAT、Query ID、Assignee、Team）。
+直接在 TUI 中編輯 `.env` 設定值（Org、Project、PAT、Query ID、Assignee）。
 
 ---
 
@@ -285,7 +328,6 @@ ADO_PROJECT=your-project
 ADO_PAT=your-personal-access-token
 ADO_QUERY_ID=your-saved-query-id
 ADO_ASSIGNEE=your-display-name       # optional, default assignee for new items
-ADO_TEAM=your-team-name              # optional, for iteration assignment
 ```
 
 > Use `ADO_ENV` environment variable to specify a custom `.env` path for switching between orgs.
@@ -350,6 +392,39 @@ ado pr "Fix #123" -d "Fix description" --auto-complete
 | `-r, --reviewer` | Required reviewer (name or email) | |
 | `-o, --optional` | Optional reviewer | |
 | `--auto-complete` | Enable auto-complete (squash merge + delete source) | false |
+
+#### `ado model` — Manage LLM model profiles
+
+Save provider / model / API key combinations as named profiles and switch between them without editing `~/.ado/config.yaml`. Profiles live in `~/.ado/models/<name>.yaml` and the active one is tracked in `~/.ado/models/current.txt`.
+
+```bash
+# Add profiles
+ado model add sonnet claude claude-sonnet-4-20250514 \
+  --api-key sk-ant-... -d "Anthropic default"
+
+ado model add gpt4 openai gpt-4o-mini --api-key sk-...
+
+ado model add gemini-flash gemini gemini-2.5-flash --api-key ...
+
+# ollama only needs --base-url (defaults to http://localhost:11434)
+ado model add local ollama llama3.2 --base-url http://localhost:11434
+
+# List / switch / remove
+ado model ls
+ado model select gpt4
+ado model current
+ado model rm sonnet
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `add <name> <provider> <model>` | Create a profile (provider: `claude` / `openai` / `gemini` / `ollama`) |
+| `ls` | List all profiles (`*` marks the active one) |
+| `select <name>` | Make a profile active |
+| `current` | Show the active profile |
+| `rm <name>` | Delete a profile |
+
+The active profile overlays the `llm:` section from `~/.ado/config.yaml`. The TUI Settings screen also exposes a `Profile` entry under LLM for one-click switching.
 
 #### `ado tui` — Launch interactive TUI
 
@@ -427,7 +502,7 @@ Step-by-step wizard:
 
 #### Settings Screen
 
-Edit `.env` values directly in the TUI (Org, Project, PAT, Query ID, Assignee, Team).
+Edit `.env` values directly in the TUI (Org, Project, PAT, Query ID, Assignee).
 
 ---
 
