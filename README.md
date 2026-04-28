@@ -63,7 +63,7 @@ go build -o ado .
 複製 `.env.example` 為 `.env` 並填入：
 
 ```
-ADO_ORG=https://dev.azure.com/your-org
+ADO_ORG=your-org                      # e.g. Advantech-EBO (不需要完整 URL)
 ADO_PROJECT=your-project
 ADO_PAT=your-personal-access-token
 ADO_QUERY_ID=your-saved-query-id
@@ -323,7 +323,7 @@ go build -o ado .
 Copy `.env.example` to `.env` and fill in:
 
 ```
-ADO_ORG=https://dev.azure.com/your-org
+ADO_ORG=your-org                      # e.g. Advantech-EBO (full URL also accepted)
 ADO_PROJECT=your-project
 ADO_PAT=your-personal-access-token
 ADO_QUERY_ID=your-saved-query-id

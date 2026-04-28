@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.0.7] - 2026-04-29
+
+### Fixed
+- `ADO_ORG` / `org` config now accepts plain org name (e.g. `Advantech-EBO`) instead of requiring full URL; full URL still supported for backward compatibility
+
 ## [v0.0.6] - 2026-04-23
 
 ### Added

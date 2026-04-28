@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rainhu/ado/internal/config"
@@ -123,7 +124,16 @@ func (c *Client) patchJSON(url string, body any, result any) error {
 }
 
 func (c *Client) BaseURL() string {
-	return c.cfg.Org
+	return NormalizeOrg(c.cfg.Org)
+}
+
+// NormalizeOrg ensures the org value is a full Azure DevOps URL.
+// Accepts both "Advantech-EBO" and "https://dev.azure.com/Advantech-EBO".
+func NormalizeOrg(org string) string {
+	if strings.HasPrefix(org, "https://") || strings.HasPrefix(org, "http://") {
+		return strings.TrimSuffix(org, "/")
+	}
+	return "https://dev.azure.com/" + strings.TrimSuffix(org, "/")
 }
 
 func (c *Client) Project() string {

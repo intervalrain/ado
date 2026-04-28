@@ -329,9 +329,9 @@ func (m Model) viewMenu() string {
 	// Status line: org / project, or a hint to configure.
 	var status string
 	if m.sumCfg != nil && m.sumCfg.Org != "" {
-		org := strings.TrimPrefix(m.sumCfg.Org, "https://")
-		org = strings.TrimPrefix(org, "http://")
-		org = strings.TrimPrefix(org, "dev.azure.com/")
+		org := m.sumCfg.Org
+		org = strings.TrimPrefix(org, "https://dev.azure.com/")
+		org = strings.TrimPrefix(org, "http://dev.azure.com/")
 		org = strings.TrimSuffix(org, "/")
 		target := org
 		if m.sumCfg.Project != "" {
