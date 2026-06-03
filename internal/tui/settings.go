@@ -96,7 +96,7 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		{"Days", "summary.days", strconv.Itoa(cfg.Summary.Days)},
 		{"Repos", "summary.repos", ""}, // placeholder — rendered as sub-list
 		{"Template", "summary.template", cfg.Summary.Template},
-		{"Author", "summary.author", cfg.Summary.Author},
+		{"Authors", "summary.authors", strings.Join(cfg.Summary.AuthorPatterns(), ", ")},
 	}
 	for _, k := range sumKeys {
 		ti := textinput.New()
@@ -528,8 +528,14 @@ func (m settingsModel) save() tea.Cmd {
 				// handled by updateProfilesList(), skip here
 			case "summary.template":
 				cfg.Summary.Template = val
-			case "summary.author":
-				cfg.Summary.Author = val
+			case "summary.authors":
+				var authors []string
+				for _, a := range strings.Split(val, ",") {
+					if a = strings.TrimSpace(a); a != "" {
+						authors = append(authors, a)
+					}
+				}
+				cfg.Summary.Authors = authors
 			// LLM
 			case "llm.provider":
 				cfg.LLM.Provider = val

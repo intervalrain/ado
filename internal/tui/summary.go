@@ -99,7 +99,7 @@ func (m summaryModel) init() tea.Cmd {
 
 func (m summaryModel) fetchCommits() tea.Cmd {
 	return func() tea.Msg {
-		commits, errs := git.CollectAllLogs(m.cfg.Summary.Repos, m.cfg.Summary.Days, m.cfg.Summary.Author)
+		commits, errs := git.CollectAllLogs(m.cfg.Summary.Repos, m.cfg.Summary.Days, m.cfg.Summary.AuthorPatterns())
 		return commitsMsg{commits: commits, errs: errs}
 	}
 }

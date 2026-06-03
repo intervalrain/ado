@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.0.8] - 2026-06-04
+
+### Changed
+- **Multi-author commit collection**: `summary.author` (single git author) is replaced by `summary.authors` — a list of author patterns that are OR'd together — so commits made under multiple git identities (e.g. work vs. personal name/email) are all collected. Fixes commits being silently dropped when the configured pattern didn't match every identity.
+- `ado commits -a` now accepts a comma-separated list of author filters; the TUI settings "Authors" field accepts the same.
+
+### Migration
+- In `~/.ado/config.yaml`, replace `author: <name>` with a list:
+  ```yaml
+  summary:
+    authors:
+      - <pattern1>
+      - <pattern2>
+  ```
+  Each pattern is matched by git (case-sensitive regex) against the full `Name <email>` string; email substrings make the most stable patterns.
+
 ## [v0.0.7] - 2026-04-29
 
 ### Fixed

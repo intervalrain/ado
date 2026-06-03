@@ -26,8 +26,24 @@ type SummarySection struct {
 	Days     int      `yaml:"days"`
 	Repos    []string `yaml:"repos"`
 	Template string   `yaml:"template"`
-	Author   string   `yaml:"author"`
+	Authors  []string `yaml:"authors,omitempty"` // git author patterns (OR'd together); empty means no filter
 	Output   string   `yaml:"output"`
+}
+
+// AuthorPatterns returns the effective list of git author filters
+// (de-duplicated, blanks dropped). An empty result means "no author filtering".
+func (s SummarySection) AuthorPatterns() []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, a := range s.Authors {
+		a = strings.TrimSpace(a)
+		if a == "" || seen[a] {
+			continue
+		}
+		seen[a] = true
+		out = append(out, a)
+	}
+	return out
 }
 
 type LLMSection struct {

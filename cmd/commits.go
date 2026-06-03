@@ -27,7 +27,7 @@ Flags mirror summary defaults from ~/.ado/config.yaml and can be overridden.`,
 	Example: `  ado commits                           # use config defaults
   ado commits -d 14                    # look back 14 days
   ado commits -r /path/to/repo,/path2  # override repo list
-  ado commits -a "Rain Hu"             # override author filter
+  ado commits -a "Rain Hu,Rain.Hu"    # override author filter (comma-separated)
   ado commits --raw                    # machine-readable one-per-line`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		days := commitsDays
@@ -48,16 +48,22 @@ Flags mirror summary defaults from ~/.ado/config.yaml and can be overridden.`,
 			return fmt.Errorf("no repos configured — set summary.repos in ~/.ado/config.yaml or pass --repos")
 		}
 
-		author := commitsAuthor
-		if author == "" {
-			author = cfg.Summary.Author
+		var authors []string
+		if commitsAuthor != "" {
+			for _, a := range strings.Split(commitsAuthor, ",") {
+				if a = strings.TrimSpace(a); a != "" {
+					authors = append(authors, a)
+				}
+			}
+		} else {
+			authors = cfg.Summary.AuthorPatterns()
 		}
 
 		// Header
 		if !commitsRaw {
 			fmt.Fprintf(os.Stdout, "Scanning %d repo(s), past %d day(s)", len(repos), days)
-			if author != "" {
-				fmt.Fprintf(os.Stdout, ", author=%q", author)
+			if len(authors) > 0 {
+				fmt.Fprintf(os.Stdout, ", authors=%q", strings.Join(authors, ", "))
 			}
 			fmt.Fprintln(os.Stdout)
 			for _, r := range repos {
@@ -66,7 +72,7 @@ Flags mirror summary defaults from ~/.ado/config.yaml and can be overridden.`,
 			fmt.Fprintln(os.Stdout)
 		}
 
-		commits, errs := git.CollectAllLogs(repos, days, author)
+		commits, errs := git.CollectAllLogs(repos, days, authors)
 		for _, err := range errs {
 			fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
 		}
@@ -131,7 +137,7 @@ func distinctRepos(commits []git.CommitLog) int {
 func init() {
 	commitsCmd.Flags().IntVarP(&commitsDays, "days", "d", 0, "number of days to look back (default from config or 7)")
 	commitsCmd.Flags().StringVarP(&commitsRepos, "repos", "r", "", "comma-separated repo paths (overrides config)")
-	commitsCmd.Flags().StringVarP(&commitsAuthor, "author", "a", "", "author filter (overrides summary.author in config)")
+	commitsCmd.Flags().StringVarP(&commitsAuthor, "author", "a", "", "comma-separated author filters (overrides summary.authors in config)")
 	commitsCmd.Flags().BoolVar(&commitsRaw, "raw", false, "tab-separated one-line-per-commit output")
 	rootCmd.AddCommand(commitsCmd)
 }

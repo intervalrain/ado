@@ -21,7 +21,7 @@ type GenerateSummaryRequest struct {
 	Days     int
 	Repos    []string
 	Template string
-	Author   string
+	Authors  []string
 }
 
 func (r *GenerateSummaryRequest) RequestName() string { return GenerateRequestName }
@@ -62,14 +62,14 @@ func (h *GenerateSummaryHandler) Handle(ctx context.Context, req cqrs.Request, w
 	if templatePath == "" {
 		templatePath = h.cfg.Summary.Template
 	}
-	author := r.Author
-	if author == "" {
-		author = h.cfg.Summary.Author
+	authors := r.Authors
+	if len(authors) == 0 {
+		authors = h.cfg.Summary.AuthorPatterns()
 	}
 
 	// Step 1: Collect git logs
 	fmt.Fprintf(w, "Collecting git commits from %d repo(s) for the past %d days...\n", len(repos), days)
-	commits, errs := git.CollectAllLogs(repos, days, author)
+	commits, errs := git.CollectAllLogs(repos, days, authors)
 	for _, err := range errs {
 		fmt.Fprintf(w, "  warning: %v\n", err)
 	}
