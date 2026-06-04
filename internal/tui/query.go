@@ -44,6 +44,11 @@ type moveOneMsg struct {
 	row int
 	err error
 }
+type deleteOneMsg struct {
+	id  int
+	row int
+	err error
+}
 
 // column index → ADO field path (empty = not editable)
 var columnFields = []string{
@@ -75,6 +80,7 @@ const (
 	modePick                    // picking from a list (e.g. State)
 	modeFilter                  // typing a '/' filter query
 	modeMove                    // picking an iteration for batch move
+	modeConfirmDelete           // confirming a batch delete
 )
 
 type queryModel struct {
@@ -103,6 +109,12 @@ type queryModel struct {
 	movePending   int // remaining PATCH responses
 	moveErrCount  int
 	moveTargetIdx int // index into iterations for the in-flight move
+
+	// Batch-delete state
+	deletePending  int // remaining DELETE responses
+	deleteErrCount int
+	deleteTotal    int          // number of items attempted
+	deletedRows    map[int]bool // real row indices successfully deleted
 
 	termWidth  int
 	termHeight int
@@ -277,6 +289,37 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 			m.moveErrCount = 0
 		}
 		return m, nil
+	case deleteOneMsg:
+		m.deletePending--
+		if msg.err != nil {
+			m.deleteErrCount++
+		} else {
+			m.deletedRows[msg.row] = true
+		}
+		if m.deletePending <= 0 {
+			total := m.deleteTotal
+			succeeded := total - m.deleteErrCount
+			if len(m.deletedRows) > 0 {
+				newRows := make([]table.Row, 0, len(m.rows))
+				for i, r := range m.rows {
+					if !m.deletedRows[i] {
+						newRows = append(newRows, r)
+					}
+				}
+				m.rows = newRows
+			}
+			m.deletedRows = map[int]bool{}
+			m.selected = map[int]bool{}
+			m.applyTableRows()
+			m.resizeColumns()
+			if m.deleteErrCount == 0 {
+				m.msg = fmt.Sprintf("Deleted %d work item(s)", succeeded)
+			} else {
+				m.msg = fmt.Sprintf("Deleted %d/%d (%d failed)", succeeded, total, m.deleteErrCount)
+			}
+			m.deleteErrCount = 0
+		}
+		return m, nil
 	}
 
 	switch m.mode {
@@ -292,6 +335,8 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		return m.updateFilter(msg)
 	case modeMove:
 		return m.updateMove(msg)
+	case modeConfirmDelete:
+		return m.updateConfirmDelete(msg)
 	}
 	return m, nil
 }
@@ -367,6 +412,19 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 			}
 			m.msg = fmt.Sprintf("Loading iterations for %d work item(s)...", len(m.selected))
 			return m, m.fetchIterations
+		case "D":
+			if len(m.selected) == 0 {
+				if row := m.realRow(); row >= 0 {
+					m.selected[row] = true
+				}
+			}
+			if len(m.selected) == 0 {
+				m.msg = "No row to delete"
+				return m, nil
+			}
+			m.mode = modeConfirmDelete
+			m.msg = ""
+			return m, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -646,6 +704,60 @@ func moveWorkItemIteration(client *api.Client, id, row int, path string) tea.Cmd
 	}
 }
 
+func (m queryModel) updateConfirmDelete(msg tea.Msg) (queryModel, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch keyMsg.String() {
+	case "y", "Y", "enter":
+		return m.startBatchDelete()
+	case "n", "N", "esc":
+		m.mode = modeBrowse
+		m.msg = "Delete cancelled"
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m queryModel) startBatchDelete() (queryModel, tea.Cmd) {
+	rows := make([]int, 0, len(m.selected))
+	for row := range m.selected {
+		if row >= 0 && row < len(m.rows) {
+			rows = append(rows, row)
+		}
+	}
+	sort.Ints(rows)
+	if len(rows) == 0 {
+		m.mode = modeBrowse
+		return m, nil
+	}
+	m.deletePending = len(rows)
+	m.deleteErrCount = 0
+	m.deleteTotal = len(rows)
+	m.deletedRows = map[int]bool{}
+	m.mode = modeBrowse
+	m.msg = fmt.Sprintf("Deleting %d work item(s)...", len(rows))
+	cmds := make([]tea.Cmd, 0, len(rows))
+	for _, row := range rows {
+		id, err := strconv.Atoi(m.rows[row][1])
+		if err != nil {
+			m.deletePending--
+			m.deleteErrCount++
+			continue
+		}
+		cmds = append(cmds, deleteWorkItem(m.client, id, row))
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func deleteWorkItem(client *api.Client, id, row int) tea.Cmd {
+	return func() tea.Msg {
+		err := client.DeleteWorkItem(id)
+		return deleteOneMsg{id: id, row: row, err: err}
+	}
+}
+
 func (m queryModel) focusedStyles() table.Styles {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
@@ -804,12 +916,14 @@ func (m queryModel) view() string {
 			}
 			b.WriteString("\n")
 		}
+	case modeConfirmDelete:
+		fmt.Fprintf(&b, "  Delete %d work item(s)? They will be sent to the recycle bin.\n", len(m.selected))
 	}
 
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  space: mark  a: all/none  m: move  /: filter  d: details  n: new  r: refresh  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  space: mark  a: all/none  m: move  D: delete  /: filter  d: details  n: new  r: refresh  q: quit\n")
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:
@@ -820,6 +934,8 @@ func (m queryModel) view() string {
 		b.WriteString("  type to filter  enter: apply  esc: cancel\n")
 	case modeMove:
 		b.WriteString("  ↑↓: select  enter: apply  esc: cancel\n")
+	case modeConfirmDelete:
+		b.WriteString("  y: confirm delete  n/esc: cancel\n")
 	}
 	return b.String()
 }
@@ -844,7 +960,7 @@ func (m queryModel) renderWithHighlight() string {
 	var b strings.Builder
 
 	colActive := m.mode == modeSelect || m.mode == modeEdit || m.mode == modePick
-	rowActive := colActive || m.mode == modeBrowse || m.mode == modeFilter
+	rowActive := colActive || m.mode == modeBrowse || m.mode == modeFilter || m.mode == modeConfirmDelete
 
 	// Header (gutter for selection marker)
 	b.WriteString(headerStyle.Render("   "))

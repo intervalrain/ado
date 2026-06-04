@@ -71,6 +71,14 @@ func (c *Client) get(url string, result any) error {
 	return c.do(req, result)
 }
 
+func (c *Client) delete(url string, result any) error {
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	return c.do(req, result)
+}
+
 func (c *Client) patch(url string, body any, result any) error {
 	data, err := json.Marshal(body)
 	if err != nil {

@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.0.9] - 2026-06-04
+
+### Added
+- Query TUI: batch delete selected work items (`D`) — sends them to the recycle bin after a `y`/`n` confirmation, mirroring the multi-select (Space) → move (`m`) flow. New `DeleteWorkItem` API.
+
 ## [v0.0.8] - 2026-06-04
 
 ### Changed

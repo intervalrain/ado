@@ -57,6 +57,15 @@ func (c *Client) UpdateWorkItemField(id int, fieldPath string, value any) error 
 	return c.patch(url, ops, nil)
 }
 
+// DeleteWorkItem sends a work item to the project recycle bin.
+func (c *Client) DeleteWorkItem(id int) error {
+	url := fmt.Sprintf(
+		"%s/%s/_apis/wit/workitems/%d?api-version=7.1",
+		c.BaseURL(), c.Project(), id,
+	)
+	return c.delete(url, nil)
+}
+
 func (c *Client) CreateWorkItem(workItemType string, fields []PatchOp) (*WorkItem, error) {
 	url := fmt.Sprintf(
 		"%s/%s/_apis/wit/workitems/$%s?api-version=7.1",
