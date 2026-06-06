@@ -49,11 +49,17 @@ type PatchOp struct {
 }
 
 func (c *Client) UpdateWorkItemField(id int, fieldPath string, value any) error {
+	return c.UpdateWorkItemFields(id, []PatchOp{
+		{Op: "replace", Path: "/fields/" + fieldPath, Value: value},
+	})
+}
+
+// UpdateWorkItemFields applies multiple field changes to a work item in a single PATCH.
+func (c *Client) UpdateWorkItemFields(id int, ops []PatchOp) error {
 	url := fmt.Sprintf(
 		"%s/%s/_apis/wit/workitems/%d?api-version=7.1",
 		c.BaseURL(), c.Project(), id,
 	)
-	ops := []PatchOp{{Op: "replace", Path: "/fields/" + fieldPath, Value: value}}
 	return c.patch(url, ops, nil)
 }
 

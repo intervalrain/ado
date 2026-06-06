@@ -6,10 +6,13 @@ import (
 	"github.com/rainhu/ado/internal/config"
 	"github.com/rainhu/ado/internal/cqrs"
 	"github.com/rainhu/ado/internal/features/create"
+	"github.com/rainhu/ado/internal/features/move"
 	"github.com/rainhu/ado/internal/features/pipeline"
 	"github.com/rainhu/ado/internal/features/pr"
 	"github.com/rainhu/ado/internal/features/query"
+	"github.com/rainhu/ado/internal/features/remove"
 	"github.com/rainhu/ado/internal/features/summary"
+	"github.com/rainhu/ado/internal/features/update"
 	"github.com/rainhu/ado/internal/llm"
 	"github.com/spf13/cobra"
 )
@@ -47,6 +50,9 @@ var rootCmd = &cobra.Command{
 		// Register handlers
 		mediator.Register(query.RequestName, query.NewGetQueryHandler(client))
 		mediator.Register(create.RequestName, create.NewCreateWorkItemHandler(client))
+		mediator.Register(update.RequestName, update.NewUpdateWorkItemHandler(client))
+		mediator.Register(move.RequestName, move.NewMoveWorkItemHandler(client))
+		mediator.Register(remove.RequestName, remove.NewRemoveWorkItemHandler(client))
 		mediator.Register(pr.ListRequestName, pr.NewListMyPRsHandler(client))
 		mediator.Register(pr.CreateRequestName, pr.NewCreatePRHandler(client))
 		mediator.Register(pipeline.ListRequestName, pipeline.NewListPipelinesHandler(client))

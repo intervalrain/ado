@@ -1,5 +1,15 @@
 # Changelog
 
+## [v1.1.0] - 2026-06-07
+
+### Added
+Bring the `ado` CLI up to parity with the TUI for work-item mutation and PR browsing:
+
+- **`ado update <id>`** — change a work item's `--title`, `--state`, `--tags`, `--est`, `--remaining` in a single PATCH. Only the flags you pass are touched, mirroring the inline-editable columns in the query TUI. New `UpdateWorkItemFields` API.
+- **`ado move <id> [id...]`** — move one or more work items to an iteration. `--iteration <name|path>` matches by path, then name (case-insensitive exact, then substring); `--current` targets the team's current sprint.
+- **`ado rm <id> [id...]`** (alias `delete`) — send work items to the recycle bin, with a confirmation prompt (`--yes`/`-y` to skip).
+- **`ado pr` listing categories** — `--created`, `--assigned` (any reviewer), `--required` (default), and `--repo <name>` (active PRs in a repo). Matches the four categories in the PR TUI.
+
 ## [v0.0.9] - 2026-06-04
 
 ### Added

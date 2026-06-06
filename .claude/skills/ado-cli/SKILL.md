@@ -64,11 +64,67 @@ ado new "Sub-task" --parent 12345 --est 2
 ado new "Registration flow" --type story --desc "As a user I want to register"
 ```
 
+### update — Update fields of a work item
+
+```bash
+ado update <id> [flags]
+```
+
+Only the flags you pass are changed (mirrors the editable columns in the query TUI).
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--title` | `-T` | New title |
+| `--state` | `-s` | New state (e.g. `New`, `Active`, `Closed`) |
+| `--tags` | | Semicolon-separated tags (replaces existing) |
+| `--est` | `-e` | Original estimate in hours |
+| `--remaining` | | Remaining work in hours |
+
+Examples:
+```bash
+ado update 1234 --state Active
+ado update 1234 --title "New title" --est 4
+ado update 1234 --tags "frontend; urgent" --remaining 2
+```
+
+### move — Move work items to an iteration
+
+```bash
+ado move <id> [id...] (--iteration <name|path> | --current)
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--iteration` | `-i` | Target iteration; matched by path, then name (exact → substring) |
+| `--current` | | Move to the team's current sprint |
+
+Examples:
+```bash
+ado move 1234 --current
+ado move 1234 5678 --iteration "Sprint 12"
+```
+
+### rm — Delete work items (recycle bin)
+
+```bash
+ado rm <id> [id...] [--yes]      # alias: ado delete
+```
+
+Prompts for confirmation unless `--yes`/`-y` is given. Items go to the recycle bin and are restorable from the web UI. Avoid `--yes` unless the user has clearly confirmed the deletion.
+
+```bash
+ado rm 1234
+ado rm 1234 5678 --yes
+```
+
 ### pr — Pull requests
 
-**List PRs assigned to you:**
+**List PRs** (category flags are mutually exclusive; precedence `--repo` > `--created` > `--assigned` > `--required`):
 ```bash
-ado pr
+ado pr                 # default: PRs where you are a required reviewer
+ado pr --created       # PRs you created
+ado pr --assigned      # PRs where you are any reviewer
+ado pr --repo <name>   # active PRs in a specific repo
 ```
 
 **Create a PR from the current branch:**
@@ -78,8 +134,12 @@ ado pr "<title>" [flags]
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--branch` | `-n` | repo default | Target branch |
-| `--desc` | `-d` | | PR description |
+| `--required` | | (default) | List: PRs where you are a required reviewer |
+| `--assigned` | | | List: PRs where you are any reviewer |
+| `--created` | | | List: PRs you created |
+| `--repo` | | | List: active PRs in the named repo |
+| `--branch` | `-n` | repo default | Target branch (create) |
+| `--desc` | `-d` | | PR description (create) |
 | `--reviewer` | `-r` | | Required reviewer (display name or email) |
 | `--optional` | `-o` | | Optional reviewer |
 | `--auto-complete` | | `false` | Auto-complete with squash merge + delete source |
@@ -156,3 +216,6 @@ The TUI has screens for Query (browse/edit work items), New (create wizard), Pul
 - **Check `ado pipeline`** when the user asks about build status, CI failures, or deployment state.
 - **Creating multiple work items**: run `ado new` once per item. You can batch them sequentially.
 - **When creating a PR**: make sure the current branch has been pushed to the remote first.
+- **Updating work items**: use `ado update <id>` for single-field tweaks (state, title, tags, estimate, remaining). Only pass the flags you intend to change.
+- **Deleting work items**: `ado rm` prompts for confirmation. Pass `--yes` only after the user has explicitly confirmed which IDs to delete. Items go to the recycle bin, not hard-deleted.
+- **Moving sprints**: `ado move ... --current` is the quickest way to pull items into the active sprint; use `--iteration` with a name for a specific one.

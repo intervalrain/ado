@@ -110,13 +110,74 @@ ado new "實作新功能" --est 8
 | `-e, --est` | 預估工時（小時） | 6 |
 | `--tags` | 標籤，以分號分隔 | |
 
-#### `ado pr [title]` — Pull Request
+#### `ado update <id>` — 更新工作項目
 
-不帶參數時列出我的 PR；帶 title 時建立新 PR。
+更新既有工作項目的欄位；只有你傳入的旗標會被改動（對應 Query TUI 的可編輯欄位）。
 
 ```bash
-# 列出所有指派給我的 PR
+# 切換狀態
+ado update 1234 --state Active
+
+# 同時改標題與預估工時
+ado update 1234 --title "新標題" --est 4
+
+# 改標籤與剩餘工時
+ado update 1234 --tags "frontend; urgent" --remaining 2
+```
+
+| 旗標 | 說明 |
+|------|------|
+| `-T, --title` | 新標題 |
+| `-s, --state` | 新狀態（New、Active、Closed…） |
+| `--tags` | 標籤，以分號分隔（取代既有） |
+| `-e, --est` | 預估工時（小時） |
+| `--remaining` | 剩餘工時（小時） |
+
+#### `ado move <id> [id...]` — 搬移迭代
+
+把一個或多個工作項目搬到指定迭代（sprint）。
+
+```bash
+# 搬到目前 sprint
+ado move 1234 --current
+
+# 依名稱搬移多筆
+ado move 1234 5678 --iteration "Sprint 12"
+```
+
+| 旗標 | 說明 |
+|------|------|
+| `-i, --iteration` | 目標迭代名稱或路徑（先比對 path，再比對 name：完全相符 → 子字串） |
+| `--current` | 搬到團隊目前 sprint |
+
+#### `ado rm <id> [id...]` — 刪除工作項目
+
+把工作項目送進資源回收筒（可於 Web UI 還原）；預設會詢問確認。別名：`ado delete`。
+
+```bash
+ado rm 1234
+ado rm 1234 5678 9012
+ado rm 1234 --yes        # 跳過確認
+```
+
+| 旗標 | 說明 |
+|------|------|
+| `-y, --yes` | 跳過確認提示 |
+
+#### `ado pr [title]` — Pull Request
+
+不帶參數時列出 PR；帶 title 時建立新 PR。列表分類旗標互斥，優先序：`--repo` > `--created` > `--assigned` > `--required`。
+
+```bash
+# 列出我是必要審查者的 PR（預設）
 ado pr
+
+# 我建立的 / 指派給我（任一審查者）的 PR
+ado pr --created
+ado pr --assigned
+
+# 列出某 repo 的 active PR
+ado pr --repo my-service
 
 # 從目前分支建立 PR
 ado pr "新增登入功能" -r "John Doe"
@@ -127,6 +188,10 @@ ado pr "修復 #123" -d "修正問題描述" --auto-complete
 
 | 旗標 | 說明 | 預設值 |
 |------|------|--------|
+| `--required` | 我是必要審查者的 PR | （預設） |
+| `--assigned` | 我是任一審查者的 PR | |
+| `--created` | 我建立的 PR | |
+| `--repo` | 指定 repo 的 active PR（依名稱比對） | |
 | `-n, --branch` | 目標分支 | repo 預設分支 |
 | `-d, --desc` | PR 描述 | |
 | `-r, --reviewer` | 必要審查者（名稱或 email） | |
@@ -370,13 +435,74 @@ ado new "Implement feature" --est 8
 | `-e, --est` | Estimate in hours | 6 |
 | `--tags` | Semicolon-separated tags | |
 
-#### `ado pr [title]` — Pull requests
+#### `ado update <id>` — Update a work item
 
-Without arguments: list my PRs. With a title: create a new PR from the current branch.
+Update fields of an existing work item; only the flags you pass are changed (mirrors the inline-editable columns in the query TUI).
 
 ```bash
-# List all PRs assigned to me
+# Change state
+ado update 1234 --state Active
+
+# Change title and estimate together
+ado update 1234 --title "New title" --est 4
+
+# Change tags and remaining work
+ado update 1234 --tags "frontend; urgent" --remaining 2
+```
+
+| Flag | Description |
+|------|-------------|
+| `-T, --title` | New title |
+| `-s, --state` | New state (New, Active, Closed, …) |
+| `--tags` | Semicolon-separated tags (replaces existing) |
+| `-e, --est` | Original estimate in hours |
+| `--remaining` | Remaining work in hours |
+
+#### `ado move <id> [id...]` — Move to an iteration
+
+Move one or more work items to a target iteration (sprint).
+
+```bash
+# Move to the current sprint
+ado move 1234 --current
+
+# Move several by name
+ado move 1234 5678 --iteration "Sprint 12"
+```
+
+| Flag | Description |
+|------|-------------|
+| `-i, --iteration` | Target iteration name or path (matched by path, then name: exact → substring) |
+| `--current` | Move to the team's current sprint |
+
+#### `ado rm <id> [id...]` — Delete work items
+
+Send work items to the recycle bin (restorable from the web UI); prompts for confirmation by default. Alias: `ado delete`.
+
+```bash
+ado rm 1234
+ado rm 1234 5678 9012
+ado rm 1234 --yes        # skip confirmation
+```
+
+| Flag | Description |
+|------|-------------|
+| `-y, --yes` | Skip the confirmation prompt |
+
+#### `ado pr [title]` — Pull requests
+
+Without arguments: list PRs. With a title: create a new PR from the current branch. The category flags are mutually exclusive; precedence: `--repo` > `--created` > `--assigned` > `--required`.
+
+```bash
+# List PRs where I'm a required reviewer (default)
 ado pr
+
+# PRs I created / where I'm any reviewer
+ado pr --created
+ado pr --assigned
+
+# Active PRs in a specific repo
+ado pr --repo my-service
 
 # Create PR from current branch
 ado pr "Add login feature" -r "John Doe"
@@ -387,6 +513,10 @@ ado pr "Fix #123" -d "Fix description" --auto-complete
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `--required` | PRs where I'm a required reviewer | (default) |
+| `--assigned` | PRs where I'm any reviewer | |
+| `--created` | PRs I created | |
+| `--repo` | Active PRs in the named repo (matched by name) | |
 | `-n, --branch` | Target branch | repo default branch |
 | `-d, --desc` | PR description | |
 | `-r, --reviewer` | Required reviewer (name or email) | |
