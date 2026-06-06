@@ -1,6 +1,6 @@
 # Changelog
 
-## [v1.1.0] - 2026-06-07
+## [v0.1.0] - 2026-06-07
 
 ### Added
 Bring the `ado` CLI up to parity with the TUI for work-item mutation and PR browsing:
