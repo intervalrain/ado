@@ -24,10 +24,24 @@ If you see an error about missing org/pat, guide the user through setup:
    pat: "your-personal-access-token"
    query_id: "optional-default-query-id"
    assignee: "Display Name"
-   ```
-2. Or set environment variables: `ADO_ORG`, `ADO_PROJECT`, `ADO_PAT`, `ADO_QUERY_ID`, `ADO_ASSIGNEE`.
 
-The `org` field accepts either a plain name (`Advantech-EBO`) or a full URL (`https://dev.azure.com/Advantech-EBO`).
+   summary:                       # optional — used by `ado summary` / `ado commits`
+     days: 7
+     repos: [~/work/repo1, ~/work/repo2]
+     authors: ["Rain Hu", "rain.hu"]   # git author filters (OR'd); empty = no filter
+     template: ~/.ado/template.md
+     output: ~/.ado/reports
+
+   llm:                           # optional — needed by `ado summary`
+     provider: claude             # claude / openai / gemini / ollama
+     model: claude-sonnet-4-20250514
+     api_key_env: ANTHROPIC_API_KEY
+   ```
+2. Or set environment variables: `ADO_ORG`, `ADO_PROJECT`, `ADO_PAT`, `ADO_QUERY_ID`, `ADO_ASSIGNEE` (they override config.yaml).
+
+The `org` field accepts either a plain name (`Advantech-EBO`) or a full URL (`https://dev.azure.com/Advantech-EBO`). The active model profile (see `ado model`) overlays the `llm:` section.
+
+`ado tui`, `ado model`, and `ado commits` work without ADO credentials; everything else needs `org` + `pat`.
 
 ---
 
@@ -177,7 +191,7 @@ ado summary -r /repo1,/repo2            # Specific repos
 ado summary -t ~/.ado/template.md        # Custom template
 ```
 
-Requires an LLM profile to be configured (see `model` below).
+Requires an LLM to be configured — either the `llm:` section in config.yaml or an active model profile (see `model` below). Run `ado commits` first to sanity-check which commits will be included. Saved reports go to `summary.output` (default `~/.ado/reports`).
 
 ### model — Manage LLM profiles
 
@@ -219,3 +233,32 @@ The TUI has screens for Query (browse/edit work items), New (create wizard), Pul
 - **Updating work items**: use `ado update <id>` for single-field tweaks (state, title, tags, estimate, remaining). Only pass the flags you intend to change.
 - **Deleting work items**: `ado rm` prompts for confirmation. Pass `--yes` only after the user has explicitly confirmed which IDs to delete. Items go to the recycle bin, not hard-deleted.
 - **Moving sprints**: `ado move ... --current` is the quickest way to pull items into the active sprint; use `--iteration` with a name for a specific one.
+- **Creating sub-tasks**: pass `--parent <id>` to `ado new` to link the new item under an existing story/epic.
+- **Debugging**: if a command fails unexpectedly, check the daily log at `~/.ado/logs/ado-YYYY-MM-DD.log` (mediator, HTTP, and TUI traces).
+
+## Common Recipes
+
+**Break a story into tasks:**
+```bash
+ado new "User registration" --type story --desc "As a user..."
+# note the returned ID, e.g. 5001
+ado new "API endpoint" --parent 5001 --est 4 --tags "backend"
+ado new "Form UI" --parent 5001 --est 3 --tags "frontend"
+```
+
+**Pull this sprint's leftovers into the current sprint:**
+```bash
+ado query                       # find the item IDs
+ado move 1234 5678 --current
+```
+
+**Close out finished work:**
+```bash
+ado update 1234 --state Closed --remaining 0
+```
+
+**Check why the build is red:**
+```bash
+ado pipeline                    # find the failing definition ID
+ado pipeline -i <id> -t 10      # see recent build history
+```
