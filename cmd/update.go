@@ -14,13 +14,15 @@ var (
 	updateTitle     string
 	updateState     string
 	updateTags      string
+	updateDesc      string
 	updateEstimate  float64
 	updateRemaining float64
+	updateJSON      bool
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update <id>",
-	Short: "Update fields of a work item (title, state, tags, estimate, remaining)",
+	Short: "Update fields of a work item (title, state, tags, description, estimate, remaining)",
 	Long: `Update one or more fields of an existing work item.
 
 Only the flags you pass are changed; everything else is left untouched.
@@ -37,7 +39,7 @@ Examples:
 			return fmt.Errorf("invalid work item id %q", args[0])
 		}
 
-		req := &update.UpdateWorkItemRequest{ID: id}
+		req := &update.UpdateWorkItemRequest{ID: id, JSON: updateJSON}
 		if cmd.Flags().Changed("title") {
 			req.Title = &updateTitle
 		}
@@ -46,6 +48,9 @@ Examples:
 		}
 		if cmd.Flags().Changed("tags") {
 			req.Tags = &updateTags
+		}
+		if cmd.Flags().Changed("desc") {
+			req.Description = &updateDesc
 		}
 		if cmd.Flags().Changed("est") {
 			req.Estimate = &updateEstimate
@@ -62,7 +67,9 @@ func init() {
 	updateCmd.Flags().StringVarP(&updateTitle, "title", "T", "", "new title")
 	updateCmd.Flags().StringVarP(&updateState, "state", "s", "", "new state (e.g. New, Active, Closed)")
 	updateCmd.Flags().StringVar(&updateTags, "tags", "", "tags (semicolon-separated; replaces existing)")
+	updateCmd.Flags().StringVarP(&updateDesc, "desc", "d", "", "description (HTML or plain text; replaces existing)")
 	updateCmd.Flags().Float64VarP(&updateEstimate, "est", "e", 0, "original estimate (hours)")
 	updateCmd.Flags().Float64Var(&updateRemaining, "remaining", 0, "remaining work (hours)")
+	updateCmd.Flags().BoolVar(&updateJSON, "json", false, "output result as JSON")
 	rootCmd.AddCommand(updateCmd)
 }

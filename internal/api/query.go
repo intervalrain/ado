@@ -27,6 +27,10 @@ type WorkItemFields struct {
 	IterationPath    string   `json:"System.IterationPath"`
 	OriginalEstimate float64  `json:"Microsoft.VSTS.Scheduling.OriginalEstimate"`
 	RemainingWork    float64  `json:"Microsoft.VSTS.Scheduling.RemainingWork"`
+	// Rich-text fields (stored as HTML by ADO).
+	Description        string `json:"System.Description"`
+	ReproSteps         string `json:"Microsoft.VSTS.TCM.ReproSteps"`
+	AcceptanceCriteria string `json:"Microsoft.VSTS.Common.AcceptanceCriteria"`
 }
 
 type Identity struct {

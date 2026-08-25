@@ -11,6 +11,7 @@ import (
 	"github.com/rainhu/ado/internal/features/pr"
 	"github.com/rainhu/ado/internal/features/query"
 	"github.com/rainhu/ado/internal/features/remove"
+	"github.com/rainhu/ado/internal/features/show"
 	"github.com/rainhu/ado/internal/features/summary"
 	"github.com/rainhu/ado/internal/features/update"
 	"github.com/rainhu/ado/internal/llm"
@@ -53,6 +54,7 @@ var rootCmd = &cobra.Command{
 		mediator.Register(update.RequestName, update.NewUpdateWorkItemHandler(client))
 		mediator.Register(move.RequestName, move.NewMoveWorkItemHandler(client))
 		mediator.Register(remove.RequestName, remove.NewRemoveWorkItemHandler(client))
+		mediator.Register(show.RequestName, show.NewShowWorkItemHandler(client))
 		mediator.Register(pr.ListRequestName, pr.NewListMyPRsHandler(client))
 		mediator.Register(pr.CreateRequestName, pr.NewCreatePRHandler(client))
 		mediator.Register(pipeline.ListRequestName, pipeline.NewListPipelinesHandler(client))

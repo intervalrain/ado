@@ -4,7 +4,18 @@
       "Bash(go get:*)",
       "Bash(/tmp/ado-build model *)",
       "Bash(go test *)",
-      "Bash(/tmp/ado-build commits *)"
+      "Bash(/tmp/ado-build commits *)",
+      "Bash(goreleaser check *)",
+      "Bash(git tag *)",
+      "Bash(git push *)",
+      "Bash(git ls-remote *)",
+      "Bash(git commit -m ' *)",
+      "Bash(perl *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d[0]['title']\\); print\\(d[0]['description'][:120]\\)\")",
+      "Bash(grep -n \"#### \\\\`ado\" /Users/rainhu/advantech/tools/ado/README.md)",
+      "Bash(ado --help)",
+      "Bash(make install *)",
+      "Bash(ado show *)"
     ]
   }
 }

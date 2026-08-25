@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -15,12 +16,14 @@ const RequestName = "UpdateWorkItem"
 // untouched, mirroring the editable columns in the query TUI
 // (Tags, State, Title, Estimate, Remaining).
 type UpdateWorkItemRequest struct {
-	ID        int
-	Title     *string
-	State     *string
-	Tags      *string
-	Estimate  *float64
-	Remaining *float64
+	ID          int
+	Title       *string
+	State       *string
+	Tags        *string
+	Description *string
+	Estimate    *float64
+	Remaining   *float64
+	JSON        bool
 }
 
 func (r *UpdateWorkItemRequest) RequestName() string { return RequestName }
@@ -52,6 +55,9 @@ func (h *UpdateWorkItemHandler) Handle(ctx context.Context, req cqrs.Request, w 
 	if r.Tags != nil {
 		add("System.Tags", *r.Tags, "Tags")
 	}
+	if r.Description != nil {
+		add("System.Description", *r.Description, "Description")
+	}
 	if r.Estimate != nil {
 		add("Microsoft.VSTS.Scheduling.OriginalEstimate", *r.Estimate, "Estimate")
 	}
@@ -60,7 +66,7 @@ func (h *UpdateWorkItemHandler) Handle(ctx context.Context, req cqrs.Request, w 
 	}
 
 	if len(ops) == 0 {
-		return fmt.Errorf("nothing to update: provide at least one of --title, --state, --tags, --est, --remaining")
+		return fmt.Errorf("nothing to update: provide at least one of --title, --state, --tags, --desc, --est, --remaining")
 	}
 
 	if err := h.client.UpdateWorkItemFields(r.ID, ops); err != nil {
@@ -68,6 +74,21 @@ func (h *UpdateWorkItemHandler) Handle(ctx context.Context, req cqrs.Request, w 
 	}
 
 	wi, err := h.client.GetWorkItem(r.ID)
+	if r.JSON {
+		out := map[string]any{"id": r.ID, "changed": changed}
+		if err == nil {
+			out["type"] = wi.Fields.WorkItemType
+			out["state"] = wi.Fields.State
+			out["title"] = wi.Fields.Title
+			out["remaining"] = wi.Fields.RemainingWork
+			out["estimate"] = wi.Fields.OriginalEstimate
+		} else {
+			out["readBackError"] = err.Error()
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
 	if err != nil {
 		// Update succeeded; only the read-back failed.
 		fmt.Fprintf(w, "Updated #%d (%v)\n", r.ID, changed)

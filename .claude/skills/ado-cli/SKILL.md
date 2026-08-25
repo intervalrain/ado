@@ -54,7 +54,20 @@ ado query                    # Uses default query_id from config
 ado query -i <query-id>     # Use a specific query ID
 ```
 
-Output: a formatted table of work items (ID, Type, Title, State, Assigned To, etc.).
+Output: a formatted table of work items (ID, Type, Title, State, Assigned To, etc.). Add `--json` for machine-readable output. The table does NOT include descriptions — use `ado show` for those.
+
+### show — Full details of work items (including description)
+
+```bash
+ado show <id> [id...] [--json]
+```
+
+Shows title, state, assignee, iteration, tags, estimate/remaining, plus rich-text fields rendered as plain text: Description, Repro Steps (bugs), Acceptance Criteria (user stories). Use this whenever the user wants to read a work item's description or acceptance criteria.
+
+```bash
+ado show 1234
+ado show 1234 5678 --json
+```
 
 ### new — Create a work item
 
@@ -91,6 +104,7 @@ Only the flags you pass are changed (mirrors the editable columns in the query T
 | `--title` | `-T` | New title |
 | `--state` | `-s` | New state (e.g. `New`, `Active`, `Closed`) |
 | `--tags` | | Semicolon-separated tags (replaces existing) |
+| `--desc` | `-d` | Description — HTML or plain text (replaces existing) |
 | `--est` | `-e` | Original estimate in hours |
 | `--remaining` | | Remaining work in hours |
 
@@ -230,7 +244,8 @@ The TUI has screens for Query (browse/edit work items), New (create wizard), Pul
 - **Check `ado pipeline`** when the user asks about build status, CI failures, or deployment state.
 - **Creating multiple work items**: run `ado new` once per item. You can batch them sequentially.
 - **When creating a PR**: make sure the current branch has been pushed to the remote first.
-- **Updating work items**: use `ado update <id>` for single-field tweaks (state, title, tags, estimate, remaining). Only pass the flags you intend to change.
+- **Reading a work item's description / acceptance criteria**: use `ado show <id>` (queries only list summary columns).
+- **Updating work items**: use `ado update <id>` for single-field tweaks (state, title, tags, description, estimate, remaining). Only pass the flags you intend to change.
 - **Deleting work items**: `ado rm` prompts for confirmation. Pass `--yes` only after the user has explicitly confirmed which IDs to delete. Items go to the recycle bin, not hard-deleted.
 - **Moving sprints**: `ado move ... --current` is the quickest way to pull items into the active sprint; use `--iteration` with a name for a specific one.
 - **Creating sub-tasks**: pass `--parent <id>` to `ado new` to link the new item under an existing story/epic.

@@ -103,6 +103,20 @@ ado query -i <query-id>
 |------|------|
 | `-i, --id` | Query ID（覆蓋 query_id 設定） |
 
+#### `ado show <id> [id...]` — 檢視工作項目詳細內容
+
+顯示工作項目的完整內容：標題、狀態、負責人、迭代、標籤、工時,以及 rich-text 欄位（Description、Bug 的 Repro Steps、User Story 的 Acceptance Criteria）轉為純文字呈現。
+
+```bash
+ado show 1234
+ado show 1234 5678
+ado show 1234 --json
+```
+
+| 旗標 | 說明 |
+|------|------|
+| `--json` | 以 JSON 輸出 |
+
 #### `ado new <title>` — 建立工作項目
 
 ```bash
@@ -144,6 +158,7 @@ ado update 1234 --tags "frontend; urgent" --remaining 2
 | `-T, --title` | 新標題 |
 | `-s, --state` | 新狀態（New、Active、Closed…） |
 | `--tags` | 標籤，以分號分隔（取代既有） |
+| `-d, --desc` | 描述（HTML 或純文字；取代既有） |
 | `-e, --est` | 預估工時（小時） |
 | `--remaining` | 剩餘工時（小時） |
 
@@ -528,6 +543,20 @@ ado query -i <query-id>
 |------|-------------|
 | `-i, --id` | Query ID (overrides query_id config) |
 
+#### `ado show <id> [id...]` — Show work item details
+
+Show the full details of one or more work items: title, state, assignee, iteration, tags, hours, and rich-text fields (Description, Repro Steps for bugs, Acceptance Criteria for user stories) rendered as plain text.
+
+```bash
+ado show 1234
+ado show 1234 5678
+ado show 1234 --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+
 #### `ado new <title>` — Create a work item
 
 ```bash
@@ -569,6 +598,7 @@ ado update 1234 --tags "frontend; urgent" --remaining 2
 | `-T, --title` | New title |
 | `-s, --state` | New state (New, Active, Closed, …) |
 | `--tags` | Semicolon-separated tags (replaces existing) |
+| `-d, --desc` | Description (HTML or plain text; replaces existing) |
 | `-e, --est` | Original estimate in hours |
 | `--remaining` | Remaining work in hours |
 
