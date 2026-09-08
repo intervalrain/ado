@@ -57,6 +57,7 @@ var rootCmd = &cobra.Command{
 		mediator.Register(show.RequestName, show.NewShowWorkItemHandler(client))
 		mediator.Register(pr.ListRequestName, pr.NewListMyPRsHandler(client))
 		mediator.Register(pr.CreateRequestName, pr.NewCreatePRHandler(client))
+		mediator.Register(pr.UpdateRequestName, pr.NewUpdatePRHandler(client))
 		mediator.Register(pipeline.ListRequestName, pipeline.NewListPipelinesHandler(client))
 
 		// LLM client (non-fatal if API key missing)

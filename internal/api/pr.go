@@ -255,3 +255,37 @@ func (c *Client) SetAutoComplete(repoID string, prID int, creatorID string) erro
 	}
 	return c.patchJSON(u, ops, nil)
 }
+
+// UpdatePullRequestInput holds the fields that can be changed on an existing PR.
+// A zero-valued field is omitted, so callers only send what they mean to change.
+type UpdatePullRequestInput struct {
+	RepoID      string
+	PRID        int
+	Title       string
+	Description string
+}
+
+// UpdatePullRequest edits an open pull request in place. Azure DevOps expects a
+// plain JSON body on this endpoint (not JSON Patch), so this uses patchJSON.
+func (c *Client) UpdatePullRequest(input UpdatePullRequestInput) (*PullRequest, error) {
+	body := map[string]any{}
+	if input.Title != "" {
+		body["title"] = input.Title
+	}
+	if input.Description != "" {
+		body["description"] = input.Description
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("nothing to update: pass a title or a description")
+	}
+
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
+		c.BaseURL(), c.Project(), input.RepoID, input.PRID,
+	)
+	var pr PullRequest
+	if err := c.patchJSON(u, body, &pr); err != nil {
+		return nil, err
+	}
+	return &pr, nil
+}

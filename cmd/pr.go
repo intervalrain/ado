@@ -19,6 +19,9 @@ var (
 	prCreated  bool
 	prRequired bool
 	prRepo     string
+
+	prUpdate int
+	prTitle  string
 )
 
 var prCmd = &cobra.Command{
@@ -33,14 +36,32 @@ required reviewer; use a category flag to change the set:
 
 With a title: create a new PR from the current branch.
 
+With --update <id>: edit an existing PR in the current repo. Only the fields you
+pass are changed, so updating a description leaves the title alone.
+
 Examples:
   ado pr
   ado pr --created
   ado pr --assigned
   ado pr --repo my-service
   ado pr "Add login feature" -n main -r "John Doe" -o "Jane Doe" --auto-complete
-  ado pr "Fix bug" -d "Fixes issue #123"`,
+  ado pr "Fix bug" -d "Fixes issue #123"
+  ado pr --update 7308 -d "$(cat pr.md)"
+  ado pr --update 7308 --title "fix(api): new title"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if prUpdate > 0 {
+			title := prTitle
+			if title == "" && len(args) > 0 {
+				title = args[0]
+			}
+			req := &pr.UpdatePRRequest{
+				PRID:        prUpdate,
+				Title:       title,
+				Description: prDesc,
+			}
+			return mediator.Send(context.Background(), req, os.Stdout)
+		}
+
 		if len(args) == 0 {
 			req := &pr.ListMyPRsRequest{Category: prListCategory()}
 			if req.Category == pr.PRRepo {
@@ -82,6 +103,8 @@ func init() {
 	prCmd.Flags().StringVarP(&prReviewer, "reviewer", "r", "", "required reviewer (display name or email)")
 	prCmd.Flags().StringVarP(&prOptional, "optional", "o", "", "optional reviewer (display name or email)")
 	prCmd.Flags().BoolVar(&prAutoComplete, "auto-complete", false, "set auto-complete (squash merge, delete source branch)")
+	prCmd.Flags().IntVar(&prUpdate, "update", 0, "update the PR with this ID instead of creating one")
+	prCmd.Flags().StringVar(&prTitle, "title", "", "new title, used with --update")
 
 	// Listing category flags (no args).
 	prCmd.Flags().BoolVar(&prAssigned, "assigned", false, "list PRs where you are any reviewer")
