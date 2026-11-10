@@ -208,6 +208,10 @@ ado pr --assigned
 # 列出某 repo 的 active PR
 ado pr --repo my-service
 
+# 檢視單一 PR 完整內容（狀態、分支、審查者投票、關聯工作項目、描述），任何目錄皆可執行
+ado pr --show 7308
+ado pr --show 7308 --json
+
 # 從目前分支建立 PR
 ado pr "新增登入功能" -r "John Doe"
 
@@ -221,6 +225,8 @@ ado pr "修復 #123" -d "修正問題描述" --auto-complete
 | `--assigned` | 我是任一審查者的 PR | |
 | `--created` | 我建立的 PR | |
 | `--repo` | 指定 repo 的 active PR（依名稱比對） | |
+| `--show <id>` | 檢視指定 PR 的完整內容 | |
+| `--json` | 以 JSON 輸出（搭配 `--show`） | |
 | `-n, --branch` | 目標分支 | repo 預設分支 |
 | `-d, --desc` | PR 描述 | |
 | `-r, --reviewer` | 必要審查者（名稱或 email） | |
@@ -648,6 +654,10 @@ ado pr --assigned
 # Active PRs in a specific repo
 ado pr --repo my-service
 
+# Show one PR in full (status, branches, reviewer votes, linked work items, description); works from any directory
+ado pr --show 7308
+ado pr --show 7308 --json
+
 # Create PR from current branch
 ado pr "Add login feature" -r "John Doe"
 
@@ -661,6 +671,8 @@ ado pr "Fix #123" -d "Fix description" --auto-complete
 | `--assigned` | PRs where I'm any reviewer | |
 | `--created` | PRs I created | |
 | `--repo` | Active PRs in the named repo (matched by name) | |
+| `--show <id>` | Show full details of the given PR | |
+| `--json` | Output as JSON (with `--show`) | |
 | `-n, --branch` | Target branch | repo default branch |
 | `-d, --desc` | PR description | |
 | `-r, --reviewer` | Required reviewer (name or email) | |

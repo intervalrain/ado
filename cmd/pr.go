@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/rainhu/ado/internal/features/pr"
@@ -22,6 +23,9 @@ var (
 
 	prUpdate int
 	prTitle  string
+
+	prShow int
+	prJSON bool
 )
 
 var prCmd = &cobra.Command{
@@ -36,6 +40,9 @@ required reviewer; use a category flag to change the set:
 
 With a title: create a new PR from the current branch.
 
+With --show <id>: print one PR in full — status, branches, reviewers and
+their votes, linked work items and the description. Works from any directory.
+
 With --update <id>: edit an existing PR in the current repo. Only the fields you
 pass are changed, so updating a description leaves the title alone.
 
@@ -44,11 +51,24 @@ Examples:
   ado pr --created
   ado pr --assigned
   ado pr --repo my-service
+  ado pr --show 7308
+  ado pr --show 7308 --json
   ado pr "Add login feature" -n main -r "John Doe" -o "Jane Doe" --auto-complete
   ado pr "Fix bug" -d "Fixes issue #123"
   ado pr --update 7308 -d "$(cat pr.md)"
   ado pr --update 7308 --title "fix(api): new title"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if prShow > 0 {
+			if prUpdate > 0 || len(args) > 0 {
+				return fmt.Errorf("--show cannot be combined with --update or a title")
+			}
+			req := &pr.ShowPRRequest{PRID: prShow, JSON: prJSON}
+			return mediator.Send(context.Background(), req, os.Stdout)
+		}
+		if prJSON {
+			return fmt.Errorf("--json is only supported with --show")
+		}
+
 		if prUpdate > 0 {
 			title := prTitle
 			if title == "" && len(args) > 0 {
@@ -105,6 +125,8 @@ func init() {
 	prCmd.Flags().BoolVar(&prAutoComplete, "auto-complete", false, "set auto-complete (squash merge, delete source branch)")
 	prCmd.Flags().IntVar(&prUpdate, "update", 0, "update the PR with this ID instead of creating one")
 	prCmd.Flags().StringVar(&prTitle, "title", "", "new title, used with --update")
+	prCmd.Flags().IntVar(&prShow, "show", 0, "show full details of the PR with this ID")
+	prCmd.Flags().BoolVar(&prJSON, "json", false, "output as JSON, used with --show")
 
 	// Listing category flags (no args).
 	prCmd.Flags().BoolVar(&prAssigned, "assigned", false, "list PRs where you are any reviewer")

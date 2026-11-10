@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"time"
 )
 
 type Repository struct {
@@ -23,6 +24,11 @@ type PullRequest struct {
 	Reviewers     []PRReviewer `json:"reviewers"`
 	Repository    Repository   `json:"repository"`
 	AutoCompleteSetBy *Identity `json:"autoCompleteSetBy,omitempty"`
+	Description   string       `json:"description"`
+	IsDraft       bool         `json:"isDraft"`
+	MergeStatus   string       `json:"mergeStatus"`
+	CreationDate  time.Time    `json:"creationDate"`
+	ClosedDate    time.Time    `json:"closedDate"`
 }
 
 type PRReviewer struct {
@@ -288,4 +294,41 @@ func (c *Client) UpdatePullRequest(input UpdatePullRequestInput) (*PullRequest, 
 		return nil, err
 	}
 	return &pr, nil
+}
+
+// GetPullRequest fetches a single pull request by ID. The project-scoped
+// endpoint needs no repository, so it works from any directory.
+func (c *Client) GetPullRequest(prID int) (*PullRequest, error) {
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/pullrequests/%d?api-version=7.1",
+		c.BaseURL(), c.Project(), prID,
+	)
+	var pr PullRequest
+	if err := c.get(u, &pr); err != nil {
+		return nil, err
+	}
+	return &pr, nil
+}
+
+type resourceRefsResult struct {
+	Value []struct {
+		ID string `json:"id"`
+	} `json:"value"`
+}
+
+// ListPRWorkItemIDs returns the IDs of the work items linked to a pull request.
+func (c *Client) ListPRWorkItemIDs(repoID string, prID int) ([]string, error) {
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/repositories/%s/pullrequests/%d/workitems?api-version=7.1",
+		c.BaseURL(), c.Project(), repoID, prID,
+	)
+	var result resourceRefsResult
+	if err := c.get(u, &result); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(result.Value))
+	for _, ref := range result.Value {
+		ids = append(ids, ref.ID)
+	}
+	return ids, nil
 }
