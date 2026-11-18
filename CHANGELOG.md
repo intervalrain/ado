@@ -5,6 +5,7 @@
 ### Added
 - `ado new -t feature` creates Feature work items (also in the TUI create form).
 - `ado update` sets the parent (`--parent`, replacing an existing one; `0` unlinks), assignee (`--assign`), `--area`, `--iteration`, and adds discussion comments (`--comment`).
+- `ado pr --comment <id> -d "<markdown>"` posts one active comment thread on a PR, looked up by ID across the project (works from any directory).
 - **Multiple named queries** — new `queries:` list (`name` + `id`) in `~/.ado/config.yaml`. The Query TUI shows a tab bar of query names; `tab`/`shift+tab` (or `]`/`[`) cycles and `s` opens a picker. Loaded results are cached per query (`r` refreshes); late responses for a query you've switched away from are discarded.
 - Settings → ADO → **Queries** sub-list replaces the single "Query ID" field: add / edit / delete (2×) / set default (`space`) / reorder (`K`/`J`).
 - `ado query -i` and `ado tui -i` accept a query **name** as well as an ID.

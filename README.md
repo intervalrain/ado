@@ -229,6 +229,9 @@ ado pr --repo my-service
 ado pr --show 7308
 ado pr --show 7308 --json
 
+# 在 PR 上新增一則留言 thread（markdown，內容來自 -d），任何目錄皆可執行
+ado pr --comment 7308 -d "$(cat review.md)"
+
 # 從目前分支建立 PR
 ado pr "新增登入功能" -r "John Doe"
 
@@ -244,6 +247,7 @@ ado pr "修復 #123" -d "修正問題描述" --auto-complete
 | `--repo` | 指定 repo 的 active PR（依名稱比對） | |
 | `--show <id>` | 檢視指定 PR 的完整內容 | |
 | `--json` | 以 JSON 輸出（搭配 `--show`） | |
+| `--comment <id>` | 在指定 PR 新增一則留言 thread（內容來自 `-d`） | |
 | `-n, --branch` | 目標分支 | repo 預設分支 |
 | `-d, --desc` | PR 描述 | |
 | `-r, --reviewer` | 必要審查者（名稱或 email） | |
@@ -701,6 +705,9 @@ ado pr --repo my-service
 ado pr --show 7308
 ado pr --show 7308 --json
 
+# Add one comment thread (markdown, from -d) to a PR; works from any directory
+ado pr --comment 7308 -d "$(cat review.md)"
+
 # Create PR from current branch
 ado pr "Add login feature" -r "John Doe"
 
@@ -716,6 +723,7 @@ ado pr "Fix #123" -d "Fix description" --auto-complete
 | `--repo` | Active PRs in the named repo (matched by name) | |
 | `--show <id>` | Show full details of the given PR | |
 | `--json` | Output as JSON (with `--show`) | |
+| `--comment <id>` | Add a comment thread (text from `-d`) to the given PR | |
 | `-n, --branch` | Target branch | repo default branch |
 | `-d, --desc` | PR description | |
 | `-r, --reviewer` | Required reviewer (name or email) | |
