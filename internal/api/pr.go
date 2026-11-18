@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -333,4 +334,29 @@ func (c *Client) ListPRWorkItemIDs(repoID string, prID int) ([]string, error) {
 		ids = append(ids, ref.ID)
 	}
 	return ids, nil
+}
+
+// CreatePRThread opens a new active comment thread on a pull request with one
+// text comment (markdown) and returns the thread ID.
+func (c *Client) CreatePRThread(repoID string, prID int, content string) (int, error) {
+	if strings.TrimSpace(content) == "" {
+		return 0, fmt.Errorf("comment is empty")
+	}
+	u := fmt.Sprintf(
+		"%s/%s/_apis/git/repositories/%s/pullRequests/%d/threads?api-version=7.1",
+		c.BaseURL(), c.Project(), repoID, prID,
+	)
+	body := map[string]any{
+		"status": "active",
+		"comments": []map[string]any{
+			{"parentCommentId": 0, "content": content, "commentType": "text"},
+		},
+	}
+	var result struct {
+		ID int `json:"id"`
+	}
+	if err := c.post(u, body, &result); err != nil {
+		return 0, err
+	}
+	return result.ID, nil
 }
