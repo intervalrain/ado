@@ -22,6 +22,7 @@ var validTypes = map[string]string{
 	"task":       "Task",
 	"bug":        "Bug",
 	"epic":       "Epic",
+	"feature":    "Feature",
 	"issue":      "Issue",
 	"user story": "User Story",
 	"userstory":  "User Story",
@@ -36,14 +37,15 @@ var newCmd = &cobra.Command{
 Examples:
   ado new "Fix login bug"
   ado new "Add feature" --type bug
+  ado new "Remote command" --type feature --parent 44187
   ado new "Implement API" --desc "REST API for users" --est 8`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		title := strings.Join(args, " ")
 
-		wiType, ok := validTypes[strings.ToLower(newType)]
-		if !ok {
-			return fmt.Errorf("invalid type %q, valid types: task, bug, epic, issue, user story", newType)
+		wiType, err := resolveWorkItemType(newType)
+		if err != nil {
+			return err
 		}
 
 		req := &create.CreateWorkItemRequest{
@@ -58,8 +60,16 @@ Examples:
 	},
 }
 
+// resolveWorkItemType maps a case-insensitive CLI type to its Azure DevOps name.
+func resolveWorkItemType(t string) (string, error) {
+	if wiType, ok := validTypes[strings.ToLower(strings.TrimSpace(t))]; ok {
+		return wiType, nil
+	}
+	return "", fmt.Errorf("invalid type %q, valid types: task, bug, epic, feature, issue, user story", t)
+}
+
 func init() {
-	newCmd.Flags().StringVarP(&newType, "type", "t", "task", "work item type: task, bug, epic, issue, user story")
+	newCmd.Flags().StringVarP(&newType, "type", "t", "task", "work item type: task, bug, epic, feature, issue, user story")
 	newCmd.Flags().StringVarP(&newDesc, "desc", "d", "", "description")
 	newCmd.Flags().Float64VarP(&newEstimate, "est", "e", 6, "original estimate (hours), also sets remaining work")
 	newCmd.Flags().StringVar(&newTags, "tags", "", "tags (semicolon-separated)")

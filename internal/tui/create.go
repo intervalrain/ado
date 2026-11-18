@@ -18,7 +18,7 @@ var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 )
 
-var typeOptions = []string{"Task", "Bug", "Epic", "Issue", "User Story"}
+var typeOptions = []string{"Task", "Bug", "Epic", "Feature", "Issue", "User Story"}
 
 type createStep int
 
