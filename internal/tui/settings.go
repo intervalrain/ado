@@ -47,6 +47,10 @@ type settingsModel struct {
 	reposAdding  bool
 	inReposList  bool // true when navigating inside the repos sub-list
 
+	// Named queries sub-editor
+	queriesEd     queriesEditor
+	inQueriesList bool
+
 	// Model profile switcher
 	profiles        []string
 	profilesCursor  int
@@ -73,7 +77,7 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		{"Org", "org", cfg.Org},
 		{"Project", "project", cfg.Project},
 		{"PAT", "pat", cfg.PAT},
-		{"Query ID", "query_id", cfg.QueryID},
+		{"Queries", "ado.queries", ""}, // rendered as sub-list
 		{"Assignee", "assignee", cfg.Assignee},
 	}
 	for _, k := range adoKeys {
@@ -142,6 +146,7 @@ func newSettingsModel(cfg *config.Config) settingsModel {
 		fields:         fields,
 		cfg:            cfg,
 		repos:          repos,
+		queriesEd:      newQueriesEditor(cfg),
 		profiles:       config.ListModelProfiles(),
 		currentProfile: config.CurrentModel(),
 	}
@@ -247,6 +252,19 @@ func (m settingsModel) update(msg tea.Msg) (settingsModel, tea.Cmd) {
 		if m.inReposList {
 			return m.updateReposList(msg)
 		}
+		if m.inQueriesList {
+			ed, cmd, closeList, save := m.queriesEd.update(msg)
+			m.queriesEd = ed
+			m.saved = false
+			if closeList {
+				m.inQueriesList = false
+			}
+			if save {
+				m.queriesEd.apply(m.cfg)
+				return m, tea.Batch(cmd, m.saveConfig())
+			}
+			return m, cmd
+		}
 		if m.inProfilesList {
 			return m.updateProfilesList(msg)
 		}
@@ -289,6 +307,13 @@ func (m settingsModel) updateBrowsing(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 		}
 	case "enter":
 		m.saved = false
+		if m.fields[m.cursor].key == "ado.queries" {
+			m.inQueriesList = true
+			if m.queriesEd.cursor >= len(m.queriesEd.items) {
+				m.queriesEd.cursor = 0
+			}
+			return m, nil
+		}
 		if m.fields[m.cursor].key == "summary.repos" {
 			m.inReposList = true
 			m.reposCursor = 0
@@ -499,6 +524,17 @@ func (m settingsModel) saveRepos() tea.Cmd {
 	}
 }
 
+// saveConfig persists m.cfg as-is (callers mutate it synchronously first).
+func (m settingsModel) saveConfig() tea.Cmd {
+	cfg := m.cfg
+	return func() tea.Msg {
+		if err := config.Save(cfg); err != nil {
+			return errMsg{err}
+		}
+		return settingsSavedMsg{}
+	}
+}
+
 func (m settingsModel) save() tea.Cmd {
 	return func() tea.Msg {
 		cfg := m.cfg
@@ -513,8 +549,8 @@ func (m settingsModel) save() tea.Cmd {
 				cfg.Project = val
 			case "pat":
 				cfg.PAT = val
-			case "query_id":
-				cfg.QueryID = val
+			case "ado.queries":
+				// handled by the queries sub-editor, skip here
 			case "assignee":
 				cfg.Assignee = val
 			// Summary
@@ -647,6 +683,21 @@ func (m settingsModel) view() string {
 			continue
 		}
 
+		// Special rendering for named queries list
+		if f.key == "ado.queries" {
+			label := fmt.Sprintf("%-*s", labelWidth, f.label)
+			cursor := "  "
+			style := lipgloss.NewStyle()
+			if i == m.cursor && !m.inQueriesList {
+				cursor = "> "
+				style = style.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
+			}
+			b.WriteString(style.Render(fmt.Sprintf("%s%s : %s", cursor, label, m.queriesEd.summary())))
+			b.WriteString("\n")
+			b.WriteString(m.queriesEd.view(strings.Repeat(" ", labelWidth+5), m.inQueriesList))
+			continue
+		}
+
 		// Special rendering for repos list
 		if f.key == "summary.repos" {
 			label := fmt.Sprintf("%-*s", labelWidth, f.label)
@@ -727,7 +778,9 @@ func (m settingsModel) view() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).MarginTop(1).Render(fmt.Sprintf("\n  Error: %v", m.err)))
 	}
 
-	if m.inReposList {
+	if m.inQueriesList {
+		b.WriteString(helpStyle.Render(m.queriesEd.help()))
+	} else if m.inReposList {
 		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  enter: browse  a: add  x: delete  esc: back"))
 	} else if m.inProfilesList {
 		b.WriteString(helpStyle.Render("\n  ↑↓: navigate  enter: activate  a: add  e: edit  x: delete (2×)  esc: back"))

@@ -14,10 +14,7 @@ var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Interactive TUI for browsing work items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id := tuiQueryID
-		if id == "" {
-			id = cfg.QueryID
-		}
+		id := cfg.ResolveQuery(tuiQueryID)
 
 		client := api.NewClient(cfg)
 		logging.L().Info("tui session started", "query_id", id)
@@ -34,6 +31,6 @@ var tuiCmd = &cobra.Command{
 }
 
 func init() {
-	tuiCmd.Flags().StringVarP(&tuiQueryID, "id", "i", "", "query ID (overrides ADO_QUERY_ID)")
+	tuiCmd.Flags().StringVarP(&tuiQueryID, "id", "i", "", "initial query name (from queries:) or ID (overrides ADO_QUERY_ID)")
 	rootCmd.AddCommand(tuiCmd)
 }

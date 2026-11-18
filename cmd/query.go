@@ -17,10 +17,7 @@ var queryCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Run a saved query and list work items",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id := queryID
-		if id == "" {
-			id = cfg.QueryID
-		}
+		id := cfg.ResolveQuery(queryID)
 
 		req := &query.GetQueryRequest{QueryID: id, JSON: queryJSON}
 		return mediator.Send(context.Background(), req, os.Stdout)
@@ -28,7 +25,7 @@ var queryCmd = &cobra.Command{
 }
 
 func init() {
-	queryCmd.Flags().StringVarP(&queryID, "id", "i", "", "query ID (overrides ADO_QUERY_ID)")
+	queryCmd.Flags().StringVarP(&queryID, "id", "i", "", "query name (from queries:) or ID (overrides ADO_QUERY_ID)")
 	queryCmd.Flags().BoolVar(&queryJSON, "json", false, "output work items as JSON")
 	rootCmd.AddCommand(queryCmd)
 }

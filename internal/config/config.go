@@ -15,8 +15,11 @@ type Config struct {
 	Org      string `yaml:"org"`
 	Project  string `yaml:"project"`
 	PAT      string `yaml:"pat"`
-	QueryID  string `yaml:"query_id"`
+	QueryID  string `yaml:"query_id"` // default query (used by `ado query`, summary, and as the TUI's initial query)
 	Assignee string `yaml:"assignee"`
+
+	// Queries are named saved queries the TUI can switch between.
+	Queries []NamedQuery `yaml:"queries,omitempty"`
 
 	Summary SummarySection `yaml:"summary"`
 	LLM     LLMSection     `yaml:"llm"`

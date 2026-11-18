@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Multiple named queries** — new `queries:` list (`name` + `id`) in `~/.ado/config.yaml`. The Query TUI shows a tab bar of query names; `tab`/`shift+tab` (or `]`/`[`) cycles and `s` opens a picker. Loaded results are cached per query (`r` refreshes); late responses for a query you've switched away from are discarded.
+- Settings → ADO → **Queries** sub-list replaces the single "Query ID" field: add / edit / delete (2×) / set default (`space`) / reorder (`K`/`J`).
+- `ado query -i` and `ado tui -i` accept a query **name** as well as an ID.
+
+### Migration
+- None required. `query_id` remains the default query; if it isn't in `queries:` it appears as "Default" and is persisted into the list the next time Settings saves.
+
 ## [v0.1.0] - 2026-06-07
 
 ### Added

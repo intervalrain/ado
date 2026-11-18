@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rainhu/ado/internal/api"
+	"github.com/rainhu/ado/internal/config"
 	"github.com/rainhu/ado/internal/util"
 )
 
@@ -35,8 +36,21 @@ var tableStyle = lipgloss.NewStyle().
 
 type openCreateMsg struct{}
 type errMsg struct{ err error }
-type queryResultMsg struct{ refs []api.WorkItemRef }
-type workItemMsg struct{ item *api.WorkItem }
+
+// queryResultMsg / workItemMsg / queryErrMsg carry the load generation so
+// responses for a query the user has already switched away from are dropped.
+type queryResultMsg struct {
+	gen  int
+	refs []api.WorkItemRef
+}
+type workItemMsg struct {
+	gen  int
+	item *api.WorkItem
+}
+type queryErrMsg struct {
+	gen int
+	err error
+}
 type fieldSavedMsg struct{ row, col int }
 type iterationsMsg struct{ iters []api.Iteration }
 type moveOneMsg struct {
@@ -81,11 +95,19 @@ const (
 	modeFilter                  // typing a '/' filter query
 	modeMove                    // picking an iteration for batch move
 	modeConfirmDelete           // confirming a batch delete
+	modeSwitch                  // picking another saved query
 )
 
 type queryModel struct {
 	client  *api.Client
 	queryID string
+
+	// Named saved queries and switching state
+	queries   []config.NamedQuery
+	activeQ   int                    // index into queries
+	switchIdx int                    // cursor in the modeSwitch picker
+	cache     map[string][]table.Row // loaded rows per query ID
+	gen       int                    // bumped on every (re)load
 	table   table.Model
 	rows    []table.Row
 	pending int
@@ -120,7 +142,24 @@ type queryModel struct {
 	termHeight int
 }
 
-func newQueryModel(client *api.Client, queryID string) queryModel {
+// newQueryModel builds the query screen for a list of named queries,
+// starting on initialID. An initialID that isn't in the list (e.g. a raw ID
+// passed via `ado tui -i`) is added to the front, named after itself.
+func newQueryModel(client *api.Client, queries []config.NamedQuery, initialID string) queryModel {
+	qs := append([]config.NamedQuery(nil), queries...)
+	active := 0
+	if initialID != "" {
+		if i := config.QueryIndex(qs, initialID); i >= 0 {
+			active = i
+		} else {
+			qs = append([]config.NamedQuery{{Name: initialID, ID: initialID}}, qs...)
+		}
+	}
+	queryID := ""
+	if len(qs) > 0 {
+		queryID = qs[active].ID
+	}
+
 	columns := []table.Column{
 		{Title: "Tags", Width: 16},
 		{Title: "ID", Width: 6},
@@ -162,6 +201,9 @@ func newQueryModel(client *api.Client, queryID string) queryModel {
 	return queryModel{
 		client:     client,
 		queryID:    queryID,
+		queries:    qs,
+		activeQ:    active,
+		cache:      map[string][]table.Row{},
 		table:      t,
 		input:      ti,
 		filterIn:   fi,
@@ -176,21 +218,94 @@ func (m queryModel) init() tea.Cmd {
 }
 
 func (m queryModel) fetchQuery() tea.Msg {
+	if m.queryID == "" {
+		return queryErrMsg{gen: m.gen, err: fmt.Errorf("no query configured — add one in Settings → ADO → Queries")}
+	}
 	result, err := m.client.RunQuery(m.queryID)
 	if err != nil {
-		return errMsg{err}
+		return queryErrMsg{gen: m.gen, err: err}
 	}
-	return queryResultMsg{refs: result.WorkItems}
+	return queryResultMsg{gen: m.gen, refs: result.WorkItems}
 }
 
-func fetchWorkItem(client *api.Client, id int) tea.Cmd {
+func fetchWorkItem(client *api.Client, gen, id int) tea.Cmd {
 	return func() tea.Msg {
 		wi, err := client.GetWorkItem(id)
 		if err != nil {
-			return workItemMsg{item: &api.WorkItem{ID: id}}
+			return workItemMsg{gen: gen, item: &api.WorkItem{ID: id}}
 		}
-		return workItemMsg{item: wi}
+		return workItemMsg{gen: gen, item: wi}
 	}
+}
+
+// activeName is the display name of the query currently shown.
+func (m queryModel) activeName() string {
+	if m.activeQ >= 0 && m.activeQ < len(m.queries) {
+		return m.queries[m.activeQ].Name
+	}
+	return m.queryID
+}
+
+// switchTo makes queries[i] the active query. Rows already loaded for it
+// are reused from the cache (press r to refresh); otherwise it is fetched.
+func (m queryModel) switchTo(i int) (queryModel, tea.Cmd) {
+	if i < 0 || i >= len(m.queries) {
+		return m, nil
+	}
+	if m.loaded && m.err == nil {
+		m.cache[m.queryID] = m.rows
+	}
+	m.activeQ = i
+	m.queryID = m.queries[i].ID
+	m.gen++
+	m.mode = modeBrowse
+	m.table.SetStyles(m.focusedStyles())
+	m.selected = map[int]bool{}
+	m.filter = ""
+	m.err = nil
+	m.pending = 0
+	m.table.SetCursor(0)
+
+	if rows, ok := m.cache[m.queryID]; ok {
+		m.rows = rows
+		m.loaded = true
+		m.applyTableRows()
+		m.resizeColumns()
+		m.msg = fmt.Sprintf("Switched to %s (cached — r to refresh)", m.activeName())
+		return m, nil
+	}
+	m.rows = nil
+	m.visibleIdx = nil
+	m.table.SetRows(nil)
+	m.loaded = false
+	m.msg = ""
+	return m, m.fetchQuery
+}
+
+func (m queryModel) updateSwitch(msg tea.Msg) (queryModel, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch keyMsg.String() {
+	case "up", "k":
+		if m.switchIdx > 0 {
+			m.switchIdx--
+		}
+	case "down", "j":
+		if m.switchIdx < len(m.queries)-1 {
+			m.switchIdx++
+		}
+	case "enter":
+		if m.switchIdx == m.activeQ {
+			m.mode = modeBrowse
+			return m, nil
+		}
+		return m.switchTo(m.switchIdx)
+	case "esc":
+		m.mode = modeBrowse
+	}
+	return m, nil
 }
 
 func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
@@ -199,7 +314,11 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
 		// Reserve lines for title, status, help, etc.
-		h := max(m.termHeight-8, 5)
+		reserve := 8
+		if len(m.queries) > 1 {
+			reserve += 2 // query tab bar + switch help line
+		}
+		h := max(m.termHeight-reserve, 5)
 		m.table.SetHeight(h)
 		if m.loaded {
 			m.resizeColumns()
@@ -208,7 +327,15 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		return m, nil
+	case queryErrMsg:
+		if msg.gen == m.gen {
+			m.err = msg.err
+		}
+		return m, nil
 	case queryResultMsg:
+		if msg.gen != m.gen {
+			return m, nil
+		}
 		m.pending = len(msg.refs)
 		if m.pending == 0 {
 			m.loaded = true
@@ -216,10 +343,13 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		}
 		cmds := make([]tea.Cmd, len(msg.refs))
 		for i, ref := range msg.refs {
-			cmds[i] = fetchWorkItem(m.client, ref.ID)
+			cmds[i] = fetchWorkItem(m.client, m.gen, ref.ID)
 		}
 		return m, tea.Batch(cmds...)
 	case workItemMsg:
+		if msg.gen != m.gen {
+			return m, nil
+		}
 		wi := msg.item
 		estimate := ""
 		if wi.Fields.OriginalEstimate > 0 {
@@ -323,6 +453,8 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 	}
 
 	switch m.mode {
+	case modeSwitch:
+		return m.updateSwitch(msg)
 	case modeBrowse:
 		return m.updateBrowse(msg)
 	case modeSelect:
@@ -344,6 +476,23 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
+		case "tab", "]":
+			if len(m.queries) > 1 {
+				return m.switchTo((m.activeQ + 1) % len(m.queries))
+			}
+			return m, nil
+		case "shift+tab", "[":
+			if len(m.queries) > 1 {
+				return m.switchTo((m.activeQ - 1 + len(m.queries)) % len(m.queries))
+			}
+			return m, nil
+		case "s":
+			if len(m.queries) > 1 {
+				m.mode = modeSwitch
+				m.switchIdx = m.activeQ
+				m.msg = ""
+			}
+			return m, nil
 		case "enter":
 			if m.realRow() >= 0 {
 				m.mode = modeSelect
@@ -371,6 +520,8 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 			m.loaded = false
 			m.pending = 0
 			m.err = nil
+			m.gen++
+			delete(m.cache, m.queryID)
 			m.msg = "Refreshing..."
 			return m, m.fetchQuery
 		case "/":
@@ -856,17 +1007,73 @@ func (m *queryModel) resizeColumns() {
 	m.table.SetColumns(cols)
 }
 
+// renderQueryTabs draws the named-query tab bar (only when there is more
+// than one query to switch between).
+func (m queryModel) renderQueryTabs() string {
+	if len(m.queries) < 2 {
+		return ""
+	}
+	active := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Bold(true).Padding(0, 1)
+	idle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Padding(0, 1)
+	parts := make([]string, len(m.queries))
+	for i, q := range m.queries {
+		if i == m.activeQ {
+			parts[i] = active.Render(q.Name)
+		} else {
+			parts[i] = idle.Render(q.Name)
+		}
+	}
+	return "  " + strings.Join(parts, " ") + "\n"
+}
+
+func (m queryModel) viewSwitch() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Switch query"))
+	b.WriteString("\n")
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	start, end := visibleRange(len(m.queries), m.switchIdx, max(m.termHeight-6, 5))
+	if start > 0 {
+		b.WriteString(dim.Render("    ↑ more") + "\n")
+	}
+	for i := start; i < end; i++ {
+		q := m.queries[i]
+		marker := "  "
+		if i == m.activeQ {
+			marker = "* "
+		}
+		line := marker + q.Name + dim.Render("  "+q.ID)
+		if i == m.switchIdx {
+			b.WriteString(selectedStyle.Render("> " + line))
+		} else {
+			b.WriteString(itemStyle.Render("  " + line))
+		}
+		b.WriteString("\n")
+	}
+	if end < len(m.queries) {
+		b.WriteString(dim.Render("    ↓ more") + "\n")
+	}
+	b.WriteString(helpStyle.Render("  ↑↓: select  enter: open  esc: cancel"))
+	return b.String()
+}
+
 func (m queryModel) view() string {
+	if m.mode == modeSwitch {
+		return m.viewSwitch()
+	}
+	switchHelp := ""
+	if len(m.queries) > 1 {
+		switchHelp = "  tab/shift+tab: next/prev query  s: switch query"
+	}
 	if m.err != nil {
-		return fmt.Sprintf("Error: %v\n\n  esc: back", m.err)
+		return fmt.Sprintf("%sError [%s]: %v\n\n  esc: back%s", m.renderQueryTabs(), m.activeName(), m.err, switchHelp)
 	}
 	if !m.loaded {
-		return fmt.Sprintf("Loading work items... (%d remaining)\n", m.pending)
+		return fmt.Sprintf("%sLoading %s... (%d remaining)\n", m.renderQueryTabs(), m.activeName(), m.pending)
 	}
 
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Query"))
+	b.WriteString(titleStyle.Render("Query · " + m.activeName()))
 	if m.filter != "" && m.mode != modeFilter {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).
 			Render(fmt.Sprintf("  /%s  (%d/%d)", m.filter, len(m.visibleIdx), len(m.rows))))
@@ -876,6 +1083,7 @@ func (m queryModel) view() string {
 			Render(fmt.Sprintf("  [%d selected]", n)))
 	}
 	b.WriteString("\n")
+	b.WriteString(m.renderQueryTabs())
 
 	b.WriteString(m.renderWithHighlight())
 	b.WriteString("\n")
@@ -924,6 +1132,9 @@ func (m queryModel) view() string {
 	switch m.mode {
 	case modeBrowse:
 		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  space: mark  a: all/none  m: move  D: delete  /: filter  d: details  n: new  r: refresh  q: quit\n")
+		if switchHelp != "" {
+			b.WriteString(switchHelp + "\n")
+		}
 	case modeSelect:
 		b.WriteString("  esc: back to rows  ←→: select column  enter: edit\n")
 	case modeEdit:

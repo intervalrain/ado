@@ -95,7 +95,7 @@ func NewModel(client *api.Client, queryID string, llmClient llm.Client, sumCfg *
 		sumCfg:    sumCfg,
 		screen:    screenMenu,
 		items: []menuItem{
-			{icon: "◆", label: "Query", desc: "Run a saved query and browse work items"},
+			{icon: "◆", label: "Query", desc: "Run saved queries and browse work items"},
 			{icon: "✚", label: "New", desc: "Create a new work item"},
 			{icon: "⇄", label: "Pull Requests", desc: "Browse pull requests by repository"},
 			{icon: "▶", label: "Pipelines", desc: "Browse pipeline definitions and builds"},
@@ -145,7 +145,11 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			switch m.cursor {
 			case 0: // Query
-				m.queryMdl = newQueryModel(m.client, m.queryID)
+				var queries []configpkg.NamedQuery
+				if m.sumCfg != nil {
+					queries = m.sumCfg.QueryList()
+				}
+				m.queryMdl = newQueryModel(m.client, queries, m.queryID)
 				m.screen = screenQuery
 				return m, m.queryMdl.init()
 			case 1: // New
@@ -179,6 +183,7 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateQuery(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Only return to menu on esc when in browse mode (not selecting/editing)
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" && m.queryMdl.mode == modeBrowse {
+		m.queryID = m.queryMdl.queryID // reopen on the last viewed query
 		m.screen = screenMenu
 		return m, nil
 	}
@@ -273,6 +278,7 @@ func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	inSub := m.settingsMdl.editing ||
 		m.settingsMdl.inReposList ||
 		m.settingsMdl.inProfilesList ||
+		m.settingsMdl.inQueriesList ||
 		m.settingsMdl.browsingDir ||
 		m.settingsMdl.wizard != nil
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {

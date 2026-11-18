@@ -62,8 +62,13 @@ ls dist/
 org: "Advantech-EBO"              # org 名稱或完整 URL 皆可
 project: "your-project"
 pat: "your-personal-access-token"
-query_id: "your-saved-query-id"   # 選填：ado query 的預設 query
+query_id: "your-saved-query-id"   # 選填：預設 query（ado query、summary、TUI 起始 query）
 assignee: "Your Display Name"     # 選填：新建工作項目時的預設指派人
+queries:                          # 選填：具名 query 清單，TUI 可用 tab / s 切換
+  - name: "My Tasks"
+    id: "your-saved-query-id"
+  - name: "Team Bugs"
+    id: "another-saved-query-id"
 
 summary:                          # 選填：ado summary / ado commits 使用
   days: 7                         # 回溯天數
@@ -324,8 +329,17 @@ ado model rm sonnet
 
 ```bash
 ado tui
-ado tui -i <query-id>
+ado tui -i <query-id|query-name>   # 指定起始 query（可用 queries: 中的名稱）
 ```
+
+> `ado query -i` 同樣接受 `queries:` 中的名稱。
+
+#### 多個具名 Query
+
+- 在 `queries:` 設定多個 query，或在 TUI **Settings → ADO → Queries** 新增（`a`）、編輯（`e`）、刪除（`x` 兩次）、設為預設（`space`）、調整順序（`K`/`J`）。
+- Query 畫面上方會顯示 query 分頁；`tab` / `shift+tab`（或 `]` / `[`）切換下一個 / 上一個，`s` 開啟清單選擇。
+- 已載入的 query 會快取，切回時不重新抓取；按 `r` 重新整理。
+- 舊設定只有 `query_id` 時會自動視為名為 "Default" 的 query，於 Settings 儲存後寫入 `queries:`。
 
 ---
 
@@ -508,8 +522,13 @@ Configuration lives in `~/.ado/config.yaml`. Environment variables (`ADO_ORG`, `
 org: "Advantech-EBO"              # plain org name or full URL
 project: "your-project"
 pat: "your-personal-access-token"
-query_id: "your-saved-query-id"   # optional: default query for `ado query`
+query_id: "your-saved-query-id"   # optional: default query (ado query, summary, TUI start)
 assignee: "Your Display Name"     # optional: default assignee for new items
+queries:                          # optional: named queries to switch between in the TUI
+  - name: "My Tasks"
+    id: "your-saved-query-id"
+  - name: "Team Bugs"
+    id: "another-saved-query-id"
 
 summary:                          # optional: used by `ado summary` / `ado commits`
   days: 7                        # look-back window
@@ -770,8 +789,17 @@ The active profile overlays the `llm:` section from `~/.ado/config.yaml`. The TU
 
 ```bash
 ado tui
-ado tui -i <query-id>
+ado tui -i <query-id|query-name>   # initial query (names from queries: work too)
 ```
+
+> `ado query -i` also accepts a name from `queries:`.
+
+#### Multiple named queries
+
+- List them under `queries:`, or manage them in the TUI under **Settings → ADO → Queries**: add (`a`), edit (`e`), delete (`x` twice), set default (`space`), reorder (`K`/`J`).
+- The Query screen shows a tab bar of query names; `tab` / `shift+tab` (or `]` / `[`) cycles, `s` opens a picker.
+- Loaded queries are cached, so switching back is instant; `r` refreshes.
+- A legacy config with only `query_id` is treated as one query named "Default" and is written into `queries:` the next time Settings saves.
 
 ---
 
