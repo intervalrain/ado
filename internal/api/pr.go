@@ -68,10 +68,12 @@ type pullRequestsResult struct {
 	Value []PullRequest `json:"value"`
 }
 
-// ListRepositories returns all Git repositories in the project.
+// ListRepositories returns all Git repositories in the project, including
+// hidden ones: project wikis are hidden repos, and without includeHidden a PR
+// into a wiki fails with "repository ... not found in project".
 func (c *Client) ListRepositories() ([]Repository, error) {
 	url := fmt.Sprintf(
-		"%s/%s/_apis/git/repositories?api-version=7.1",
+		"%s/%s/_apis/git/repositories?includeHidden=true&api-version=7.1",
 		c.BaseURL(), c.Project(),
 	)
 	var result reposResult
