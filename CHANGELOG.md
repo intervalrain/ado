@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- `ado new -t feature` creates Feature work items (also in the TUI create form).
+- `ado update` sets the parent (`--parent`, replacing an existing one; `0` unlinks), assignee (`--assign`), `--area`, `--iteration`, and adds discussion comments (`--comment`).
 - **Multiple named queries** — new `queries:` list (`name` + `id`) in `~/.ado/config.yaml`. The Query TUI shows a tab bar of query names; `tab`/`shift+tab` (or `]`/`[`) cycles and `s` opens a picker. Loaded results are cached per query (`r` refreshes); late responses for a query you've switched away from are discarded.
 - Settings → ADO → **Queries** sub-list replaces the single "Query ID" field: add / edit / delete (2×) / set default (`space`) / reorder (`K`/`J`).
 - `ado query -i` and `ado tui -i` accept a query **name** as well as an ID.
@@ -10,6 +12,9 @@
 
 ### Changed
 - Query TUI columns now have sensible widths: Tags / Assigned To are capped at 20, Type at 12, State at 10, and Title takes the remaining terminal width. Longer cells are truncated with `…` (full value still shown when editing and still matched by `/` filter).
+
+### Fixed
+- `ado pr` can open and list PRs in a project wiki: repositories are listed with `includeHidden=true`, since wikis are hidden repos.
 
 ### Migration
 - None required. `query_id` remains the default query; if it isn't in `queries:` it appears as "Default" and is persisted into the list the next time Settings saves.

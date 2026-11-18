@@ -137,7 +137,7 @@ ado new "實作新功能" --est 8 --parent 12345
 
 | 旗標 | 說明 | 預設值 |
 |------|------|--------|
-| `-t, --type` | 工作項目類型（task, bug, epic, issue, user story / story） | task |
+| `-t, --type` | 工作項目類型（task, bug, epic, feature, issue, user story / story） | task |
 | `-d, --desc` | 描述 | |
 | `-e, --est` | 預估工時（小時），同時設定 remaining | 6 |
 | `--tags` | 標籤，以分號分隔 | |
@@ -156,6 +156,13 @@ ado update 1234 --title "新標題" --est 4
 
 # 改標籤與剩餘工時
 ado update 1234 --tags "frontend; urgent" --remaining 2
+
+# 掛到另一個 parent（原本的 parent 會被取代；--parent 0 移除）
+ado update 1234 --parent 1200
+
+# 指派、area / iteration、留言
+ado update 1234 --assign "dev@example.com" --iteration "Proj\Sprint 12"
+ado update 1234 --comment "等待 review"
 ```
 
 | 旗標 | 說明 |
@@ -166,6 +173,11 @@ ado update 1234 --tags "frontend; urgent" --remaining 2
 | `-d, --desc` | 描述（HTML 或純文字；取代既有） |
 | `-e, --est` | 預估工時（小時） |
 | `--remaining` | 剩餘工時（小時） |
+| `-p, --parent` | Parent 工作項目 ID（取代既有 parent；`0` 移除） |
+| `-a, --assign` | 指派對象（顯示名稱或 email；`""` 取消指派） |
+| `--area` | Area path |
+| `-i, --iteration` | Iteration path |
+| `-c, --comment` | 在討論區新增留言 |
 
 #### `ado move <id> [id...]` — 搬移迭代
 
@@ -597,7 +609,7 @@ ado new "Implement feature" --est 8 --parent 12345
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-t, --type` | Work item type (task, bug, epic, issue, user story / story) | task |
+| `-t, --type` | Work item type (task, bug, epic, feature, issue, user story / story) | task |
 | `-d, --desc` | Description | |
 | `-e, --est` | Estimate in hours (also sets remaining work) | 6 |
 | `--tags` | Semicolon-separated tags | |
@@ -616,6 +628,13 @@ ado update 1234 --title "New title" --est 4
 
 # Change tags and remaining work
 ado update 1234 --tags "frontend; urgent" --remaining 2
+
+# Re-parent (replaces an existing parent; --parent 0 unlinks)
+ado update 1234 --parent 1200
+
+# Assign, set area / iteration, comment
+ado update 1234 --assign "dev@example.com" --iteration "Proj\Sprint 12"
+ado update 1234 --comment "Blocked on review"
 ```
 
 | Flag | Description |
@@ -626,6 +645,11 @@ ado update 1234 --tags "frontend; urgent" --remaining 2
 | `-d, --desc` | Description (HTML or plain text; replaces existing) |
 | `-e, --est` | Original estimate in hours |
 | `--remaining` | Remaining work in hours |
+| `-p, --parent` | Parent work item ID (replaces an existing parent; `0` unlinks) |
+| `-a, --assign` | Assignee (display name or email; `""` unassigns) |
+| `--area` | Area path |
+| `-i, --iteration` | Iteration path |
+| `-c, --comment` | Add a comment to the discussion |
 
 #### `ado move <id> [id...]` — Move to an iteration
 
