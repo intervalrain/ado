@@ -14,9 +14,20 @@ type WorkItemRef struct {
 }
 
 type WorkItem struct {
-	ID     int            `json:"id"`
-	Fields WorkItemFields `json:"fields"`
+	ID        int            `json:"id"`
+	Fields    WorkItemFields `json:"fields"`
+	Relations []Relation     `json:"relations,omitempty"`
 }
+
+// Relation is a link on a work item. Rel "System.LinkTypes.Hierarchy-Reverse"
+// points at the item's parent.
+type Relation struct {
+	Rel string `json:"rel"`
+	URL string `json:"url"`
+}
+
+// ParentRel is the relation type that links a work item to its parent.
+const ParentRel = "System.LinkTypes.Hierarchy-Reverse"
 
 type WorkItemFields struct {
 	Title            string   `json:"System.Title"`

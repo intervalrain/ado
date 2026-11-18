@@ -17,12 +17,17 @@ var (
 	updateDesc      string
 	updateEstimate  float64
 	updateRemaining float64
+	updateAssign    string
+	updateArea      string
+	updateIteration string
+	updateComment   string
+	updateParent    int
 	updateJSON      bool
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update <id>",
-	Short: "Update fields of a work item (title, state, tags, description, estimate, remaining)",
+	Short: "Update a work item: fields, assignee, area/iteration, parent link, comment",
 	Long: `Update one or more fields of an existing work item.
 
 Only the flags you pass are changed; everything else is left untouched.
@@ -31,7 +36,11 @@ Mirrors the inline-editable columns in the query TUI.
 Examples:
   ado update 1234 --state Active
   ado update 1234 --title "New title" --est 4
-  ado update 1234 --tags "frontend; urgent" --remaining 2`,
+  ado update 1234 --tags "frontend; urgent" --remaining 2
+  ado update 1234 --parent 1200            # link under 1200 (replaces an existing parent)
+  ado update 1234 --parent 0               # remove the parent link
+  ado update 1234 --assign "dev@example.com" --iteration "Proj\Sprint 12"
+  ado update 1234 --comment "Blocked on review"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := strconv.Atoi(args[0])
@@ -58,6 +67,24 @@ Examples:
 		if cmd.Flags().Changed("remaining") {
 			req.Remaining = &updateRemaining
 		}
+		if cmd.Flags().Changed("assign") {
+			req.AssignedTo = &updateAssign
+		}
+		if cmd.Flags().Changed("area") {
+			req.Area = &updateArea
+		}
+		if cmd.Flags().Changed("iteration") {
+			req.Iteration = &updateIteration
+		}
+		if cmd.Flags().Changed("comment") {
+			req.Comment = &updateComment
+		}
+		if cmd.Flags().Changed("parent") {
+			if updateParent < 0 {
+				return fmt.Errorf("invalid parent id %d", updateParent)
+			}
+			req.Parent = &updateParent
+		}
 
 		return mediator.Send(context.Background(), req, os.Stdout)
 	},
@@ -70,6 +97,11 @@ func init() {
 	updateCmd.Flags().StringVarP(&updateDesc, "desc", "d", "", "description (HTML or plain text; replaces existing)")
 	updateCmd.Flags().Float64VarP(&updateEstimate, "est", "e", 0, "original estimate (hours)")
 	updateCmd.Flags().Float64Var(&updateRemaining, "remaining", 0, "remaining work (hours)")
+	updateCmd.Flags().StringVarP(&updateAssign, "assign", "a", "", `assignee (display name or email; "" unassigns)`)
+	updateCmd.Flags().StringVar(&updateArea, "area", "", "area path")
+	updateCmd.Flags().StringVarP(&updateIteration, "iteration", "i", "", "iteration path (see also: ado move)")
+	updateCmd.Flags().StringVarP(&updateComment, "comment", "c", "", "add a comment to the discussion")
+	updateCmd.Flags().IntVarP(&updateParent, "parent", "p", 0, "parent work item ID (0 removes the parent link)")
 	updateCmd.Flags().BoolVar(&updateJSON, "json", false, "output result as JSON")
 	rootCmd.AddCommand(updateCmd)
 }
