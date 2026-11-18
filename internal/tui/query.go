@@ -314,7 +314,7 @@ func (m queryModel) update(msg tea.Msg) (queryModel, tea.Cmd) {
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
 		// Reserve lines for title, status, help, etc.
-		reserve := 8
+		reserve := 9 // incl. the page-info line
 		if len(m.queries) > 1 {
 			reserve += 2 // query tab bar + switch help line
 		}
@@ -485,6 +485,14 @@ func (m queryModel) updateBrowse(msg tea.Msg) (queryModel, tea.Cmd) {
 			if len(m.queries) > 1 {
 				return m.switchTo((m.activeQ - 1 + len(m.queries)) % len(m.queries))
 			}
+			return m, nil
+		case "left", "h":
+			page, _, _, _ := m.pageBounds()
+			m.gotoPage(page - 1)
+			return m, nil
+		case "right", "l":
+			page, _, _, _ := m.pageBounds()
+			m.gotoPage(page + 1)
 			return m, nil
 		case "s":
 			if len(m.queries) > 1 {
@@ -986,25 +994,81 @@ func (m queryModel) realRow() int {
 	return m.visibleIdx[c]
 }
 
+const (
+	titleCol      = 4
+	minTitleWidth = 20
+	// tableChrome is everything on a row that isn't a column: the border (2)
+	// and the selection-marker gutter (3).
+	tableChrome = 5
+)
+
+// columnMaxWidths caps each column's content width (0 = no cap, flexes to
+// fill the terminal). Cells longer than their column are truncated with "…".
+var columnMaxWidths = []int{
+	20, // Tags
+	8,  // ID
+	12, // Type
+	10, // State
+	0,  // Title (flex)
+	20, // Assigned To
+	8,  // Estimate
+	9,  // Remaining
+}
+
+// resizeColumns sizes every column to its content, capped by
+// columnMaxWidths, and gives Title the rest of the terminal width (never
+// more than its longest value). Each column gets one column of padding.
 func (m *queryModel) resizeColumns() {
-	headers := []string{"Tags", "ID", "Type", "State", "Title", "Assigned To", "Estimate", "Remaining"}
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = util.DisplayWidth(h)
+	cols := m.table.Columns()
+	content := make([]int, len(cols))
+	for i, c := range cols {
+		content[i] = util.DisplayWidth(c.Title)
 	}
 	for _, row := range m.rows {
-		for i, cell := range row {
-			dw := util.DisplayWidth(cell)
-			if dw > widths[i] {
-				widths[i] = dw
-			}
+		for i := 0; i < len(row) && i < len(content); i++ {
+			content[i] = max(content[i], util.DisplayWidth(row[i]))
 		}
 	}
-	cols := m.table.Columns()
+
+	fixed := 0
 	for i := range cols {
-		cols[i].Width = widths[i] + 2
+		if i == titleCol {
+			continue
+		}
+		w := content[i]
+		if c := columnMaxWidths[i]; c > 0 {
+			w = min(w, c)
+		}
+		cols[i].Width = w + 1
+		fixed += cols[i].Width
 	}
+	avail := m.termWidth - tableChrome - (len(cols) - 1) - fixed
+	cols[titleCol].Width = min(content[titleCol]+1, max(avail, minTitleWidth))
 	m.table.SetColumns(cols)
+}
+
+// pageSize is the number of rows shown per page.
+func (m queryModel) pageSize() int {
+	return max(m.table.Height(), 1)
+}
+
+// pageBounds returns the current page (0-based), the page count and the
+// [start, end) slice of visible rows on that page. The page follows the cursor.
+func (m queryModel) pageBounds() (page, pages, start, end int) {
+	size := m.pageSize()
+	total := len(m.visibleIdx)
+	pages = max((total+size-1)/size, 1)
+	page = min(max(m.table.Cursor(), 0)/size, pages-1)
+	start = page * size
+	end = min(start+size, total)
+	return page, pages, start, end
+}
+
+// gotoPage moves the cursor to the first row of page p (clamped).
+func (m *queryModel) gotoPage(p int) {
+	_, pages, _, _ := m.pageBounds()
+	p = min(max(p, 0), pages-1)
+	m.table.SetCursor(p * m.pageSize())
 }
 
 // renderQueryTabs draws the named-query tab bar (only when there is more
@@ -1087,6 +1151,7 @@ func (m queryModel) view() string {
 
 	b.WriteString(m.renderWithHighlight())
 	b.WriteString("\n")
+	b.WriteString(m.renderPageInfo())
 
 	// Status message
 	if m.msg != "" {
@@ -1131,7 +1196,7 @@ func (m queryModel) view() string {
 	// Help
 	switch m.mode {
 	case modeBrowse:
-		b.WriteString("  esc: back  ↑↓: navigate  enter: select row  space: mark  a: all/none  m: move  D: delete  /: filter  d: details  n: new  r: refresh  q: quit\n")
+		b.WriteString("  esc: back  ↑↓: navigate  ←→/pgup/pgdn: page  enter: select row  space: mark  a: all/none  m: move  D: delete  /: filter  d: details  n: new  r: refresh  q: quit\n")
 		if switchHelp != "" {
 			b.WriteString(switchHelp + "\n")
 		}
@@ -1151,6 +1216,17 @@ func (m queryModel) view() string {
 	return b.String()
 }
 
+
+// renderPageInfo is the "Page x/y · rows a–b of n" line under the table.
+func (m queryModel) renderPageInfo() string {
+	total := len(m.visibleIdx)
+	if total == 0 {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  No work items") + "\n"
+	}
+	page, pages, start, end := m.pageBounds()
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+		fmt.Sprintf("  Page %d/%d · rows %d–%d of %d", page+1, pages, start+1, end, total)) + "\n"
+}
 
 func (m queryModel) renderWithHighlight() string {
 	cols := m.table.Columns()
@@ -1176,7 +1252,7 @@ func (m queryModel) renderWithHighlight() string {
 	// Header (gutter for selection marker)
 	b.WriteString(headerStyle.Render("   "))
 	for i, col := range cols {
-		cell := util.PadRight(col.Title, col.Width)
+		cell := util.PadRight(util.Truncate(col.Title, col.Width-1), col.Width)
 		if colActive && i == m.selCol {
 			b.WriteString(cellHighlight.Render(cell))
 		} else {
@@ -1198,8 +1274,10 @@ func (m queryModel) renderWithHighlight() string {
 	}
 	b.WriteString("\n")
 
-	// Rows
-	for ri, idx := range m.visibleIdx {
+	// Rows — only the page the cursor is on
+	_, _, start, end := m.pageBounds()
+	for ri := start; ri < end; ri++ {
+		idx := m.visibleIdx[ri]
 		row := m.rows[idx]
 		rowStyle := stateStyle(row[3])
 
@@ -1215,7 +1293,7 @@ func (m queryModel) renderWithHighlight() string {
 			if ci < len(row) {
 				val = row[ci]
 			}
-			cell := util.PadRight(val, col.Width)
+			cell := util.PadRight(util.Truncate(val, col.Width-1), col.Width)
 			switch {
 			case rowActive && ri == cursorRow && colActive && ci == m.selCol:
 				b.WriteString(cellHighlight.Render(cell))

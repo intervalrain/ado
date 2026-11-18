@@ -6,6 +6,10 @@
 - **Multiple named queries** — new `queries:` list (`name` + `id`) in `~/.ado/config.yaml`. The Query TUI shows a tab bar of query names; `tab`/`shift+tab` (or `]`/`[`) cycles and `s` opens a picker. Loaded results are cached per query (`r` refreshes); late responses for a query you've switched away from are discarded.
 - Settings → ADO → **Queries** sub-list replaces the single "Query ID" field: add / edit / delete (2×) / set default (`space`) / reorder (`K`/`J`).
 - `ado query -i` and `ado tui -i` accept a query **name** as well as an ID.
+- Query TUI is **paged**: only the rows that fit the terminal are drawn, with a `Page x/y · rows a–b of n` line; `←`/`→` (or `h`/`l`) jump a page, `pgup`/`pgdn`/`g`/`G` also work.
+
+### Changed
+- Query TUI columns now have sensible widths: Tags / Assigned To are capped at 20, Type at 12, State at 10, and Title takes the remaining terminal width. Longer cells are truncated with `…` (full value still shown when editing and still matched by `/` filter).
 
 ### Migration
 - None required. `query_id` remains the default query; if it isn't in `queries:` it appears as "Default" and is persisted into the list the next time Settings saves.

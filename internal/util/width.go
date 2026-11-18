@@ -28,6 +28,31 @@ func PadRight(s string, width int) string {
 	return s + strings.Repeat(" ", pad)
 }
 
+// Truncate shortens s to at most width display columns, ending it with "…"
+// when anything was cut.
+func Truncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if DisplayWidth(s) <= width {
+		return s
+	}
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := 1
+		if IsWide(r) {
+			rw = 2
+		}
+		if w+rw > width-1 { // keep one column for the ellipsis
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	return b.String() + "…"
+}
+
 // IsWide returns true if the rune occupies 2 columns in a terminal.
 func IsWide(r rune) bool {
 	return unicode.Is(unicode.Han, r) ||
